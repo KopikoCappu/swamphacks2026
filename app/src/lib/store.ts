@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { appStorage } from './storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { uid } from './ink';
@@ -138,7 +138,7 @@ export const useStore = create<State>()(
     {
       name: 'inkbuddy',
       version: 1,
-      storage: createJSONStorage(() => AsyncStorage),
+      storage: createJSONStorage(() => appStorage),
       partialize: ({ undo, redo, ...rest }) => rest,
       // v0 stored a single `penSize`; fold it into `sizes`.
       migrate: (persisted, version) => {

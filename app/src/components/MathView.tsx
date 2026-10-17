@@ -1,8 +1,12 @@
-import { Platform, Text } from 'react-native';
+import { useMemo } from 'react';
+import { MathWebView } from '@/components/MathWebView';
+import { renderMath } from '@/lib/katexRender';
+import { C } from '@/lib/theme';
 
 export type MathViewProps = { latex: string; color?: string; fontSize?: number };
 
-/** Native fallback shows the LaTeX source; the web build (MathView.web.tsx) typesets it with KaTeX. */
-export function MathView({ latex, color, fontSize = 20 }: MathViewProps) {
-  return <Text style={{ color, fontSize: fontSize * 0.8, fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }) }}>{latex}</Text>;
+/** A LaTeX equation on the page (native: KaTeX in a WebView). The web build uses MathView.web.tsx. */
+export function MathView({ latex, color, fontSize = 24 }: MathViewProps) {
+  const html = useMemo(() => renderMath(latex, true), [latex]);
+  return <MathWebView html={html} color={color ?? C.text} fontSize={fontSize} inline />;
 }
