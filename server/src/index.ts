@@ -18,6 +18,36 @@ app.get('/health', (_req, res) => {
   });
 });
 
+// Current weather for the home-screen banner. Location is the city-level guess Vercel attaches to each
+// request (no location permission needed); Open-Meteo is free and keyless. Locally there's no location.
+app.get('/weather', async (req, res) => {
+  const lat = Number(req.header('x-vercel-ip-latitude'));
+  const lon = Number(req.header('x-vercel-ip-longitude'));
+  const cityHeader = req.header('x-vercel-ip-city');
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || (lat === 0 && lon === 0)) {
+    res.json({ available: false });
+    return;
+  }
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(2)}&longitude=${lon.toFixed(2)}&current=temperature_2m,weather_code,is_day&temperature_unit=fahrenheit`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(4000) });
+    if (!r.ok) throw new Error(`open-meteo ${r.status}`);
+    const j = (await r.json()) as { current?: { temperature_2m: number; weather_code: number; is_day: number } };
+    if (!j.current) throw new Error('no current weather');
+    res.set('Cache-Control', 'private, max-age=600');
+    res.json({
+      available: true,
+      city: cityHeader ? decodeURIComponent(cityHeader) : null,
+      tempF: Math.round(j.current.temperature_2m),
+      code: j.current.weather_code,
+      isDay: j.current.is_day === 1,
+    });
+  } catch (err) {
+    console.warn('[weather] failed', err instanceof Error ? err.message : err);
+    res.json({ available: false });
+  }
+});
+
 app.post('/ask', async (req, res) => {
   const body = req.body as AskRequest;
   if (!body?.messages?.length) {

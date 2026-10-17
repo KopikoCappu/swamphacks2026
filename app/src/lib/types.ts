@@ -99,7 +99,7 @@ export type Page = {
   pageCount?: number;
 };
 
-export type Folder = { id: string; name: string; createdAt: number; updatedAt?: number };
+export type Folder = { id: string; name: string; color?: string; createdAt: number; updatedAt?: number };
 
 export type Selection = {
   strokeIds: string[];

@@ -2,6 +2,7 @@ import { appStorage } from './storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { uid } from './ink';
+import { FOLDER_COLORS } from './theme';
 import type { Folder, Page, ShapeKind, Tool } from './types';
 
 type Snapshot = Pick<Page, 'strokes' | 'texts' | 'maths' | 'images' | 'annotations'>;
@@ -46,6 +47,7 @@ type State = {
   movePage: (id: string, folderId: string | null) => void;
   createFolder: (name?: string) => string;
   renameFolder: (id: string, name: string) => void;
+  setFolderColor: (id: string, color: string) => void;
   /** Notes inside go back to "no folder" — nothing is deleted. */
   deleteFolder: (id: string) => void;
   /** Mutate a page. Pass `trackUndo` for user edits to the canvas. */
@@ -104,11 +106,17 @@ export const useStore = create<State>()(
       createFolder: (name = 'New folder') => {
         const id = uid();
         const now = Date.now();
-        set((s) => ({ folders: { ...s.folders, [id]: { id, name, createdAt: now, updatedAt: now } } }));
+        set((s) => {
+          // Next color in the palette, so new folders don't all look the same.
+          const color = FOLDER_COLORS[Object.keys(s.folders).length % FOLDER_COLORS.length];
+          return { folders: { ...s.folders, [id]: { id, name, color, createdAt: now, updatedAt: now } } };
+        });
         return id;
       },
       renameFolder: (id, name) =>
         set((s) => (s.folders[id] ? { folders: { ...s.folders, [id]: { ...s.folders[id], name, updatedAt: Date.now() } } } : s)),
+      setFolderColor: (id, color) =>
+        set((s) => (s.folders[id] ? { folders: { ...s.folders, [id]: { ...s.folders[id], color, updatedAt: Date.now() } } } : s)),
       deleteFolder: (id) =>
         set((s) => {
           const now = Date.now();
