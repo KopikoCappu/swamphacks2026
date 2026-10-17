@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { uid } from './ink';
 import type { Folder, Page, ShapeKind, Tool } from './types';
 
-type Snapshot = Pick<Page, 'strokes' | 'texts' | 'images' | 'annotations'>;
+type Snapshot = Pick<Page, 'strokes' | 'texts' | 'maths' | 'images' | 'annotations'>;
 type SizedTool = 'pen' | 'highlighter' | 'eraser';
 
 export const SIZE_OPTIONS: Record<SizedTool, number[]> = {
@@ -49,7 +49,7 @@ type State = {
   setShapeKind: (k: ShapeKind) => void;
 };
 
-const snapshot = (p: Page): Snapshot => ({ strokes: p.strokes, texts: p.texts, images: p.images, annotations: p.annotations });
+const snapshot = (p: Page): Snapshot => ({ strokes: p.strokes, texts: p.texts, maths: p.maths ?? [], images: p.images, annotations: p.annotations });
 
 export const useStore = create<State>()(
   persist(

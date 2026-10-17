@@ -1,6 +1,6 @@
 import { Skia, type SkPath } from '@shopify/react-native-skia';
 import { getStroke } from 'perfect-freehand';
-import type { PageImage, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
+import type { MathBlock, PageImage, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -99,11 +99,16 @@ export const textBounds = (t: TextBlock): Rect => ({
 });
 
 /** Everything mostly inside the lasso polygon. */
+export const mathBounds = (m: MathBlock): Rect => ({ x: m.x, y: m.y, w: m.w, h: m.h });
+
+export const rectContains = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
+
 export function selectWithLasso(
   lasso: Point[],
   strokes: Stroke[],
   texts: TextBlock[],
   images: PageImage[],
+  maths: MathBlock[] = [],
 ): Selection | null {
   if (lasso.length < 3) return null;
   const strokeIds = strokes
@@ -115,15 +120,17 @@ export function selectWithLasso(
   const center = (r: Rect) => [r.x + r.w / 2, r.y + r.h / 2] as const;
   const textIds = texts.filter((t) => pointInPolygon(...center(textBounds(t)), lasso)).map((t) => t.id);
   const imageIds = images.filter((im) => pointInPolygon(...center(im), lasso)).map((i) => i.id);
+  const mathIds = maths.filter((m) => pointInPolygon(...center(mathBounds(m)), lasso)).map((m) => m.id);
 
   const rects = [
     ...strokes.filter((s) => strokeIds.includes(s.id)).map(strokeBounds),
     ...texts.filter((t) => textIds.includes(t.id)).map(textBounds),
     ...images.filter((i) => imageIds.includes(i.id)),
+    ...maths.filter((m) => mathIds.includes(m.id)).map(mathBounds),
   ];
   const bounds = unionRects(rects);
   if (!bounds) return null;
-  return { strokeIds, textIds, imageIds, bounds };
+  return { strokeIds, textIds, mathIds, imageIds, bounds };
 }
 
 /** Strokes touched by the eraser at (x, y). */

@@ -19,13 +19,16 @@ export type Stroke = {
   stylus: boolean;
 };
 
-export type TextBlock = { id: string; x: number; y: number; width: number; text: string };
+export type TextBlock = { id: string; x: number; y: number; width: number; text: string; color?: string };
+
+/** A rendered LaTeX equation on the page. w/h are an estimate used for hit-testing and selection. */
+export type MathBlock = { id: string; x: number; y: number; w: number; h: number; latex: string; color?: string };
 
 export type PageImage = { id: string; x: number; y: number; w: number; h: number; base64: string };
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
-export type AnnotationKind = 'circle' | 'box' | 'underline' | 'strike' | 'check' | 'cross' | 'note';
+export type AnnotationKind = 'circle' | 'box' | 'underline' | 'strike' | 'check' | 'cross' | 'highlight' | 'arrow' | 'note';
 
 /** Something the AI drew on the page, already mapped into page space. */
 export type Annotation = {
@@ -34,6 +37,8 @@ export type Annotation = {
   rect: Rect;
   color: string;
   text?: string;
+  /** arrow only: start point in page space; the arrow points at `rect` */
+  from?: [number, number];
   createdAt: number;
 };
 
@@ -64,6 +69,7 @@ export type Page = {
   updatedAt: number;
   strokes: Stroke[];
   texts: TextBlock[];
+  maths?: MathBlock[];
   images: PageImage[];
   annotations: Annotation[];
   chat: ChatMessage[];
@@ -78,6 +84,7 @@ export type Folder = { id: string; name: string; createdAt: number };
 export type Selection = {
   strokeIds: string[];
   textIds: string[];
+  mathIds: string[];
   imageIds: string[];
   bounds: Rect;
 };

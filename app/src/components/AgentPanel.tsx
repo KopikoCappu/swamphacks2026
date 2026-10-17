@@ -2,12 +2,14 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRef, useState, type ComponentProps, type ComponentRef } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { IconBtn } from '@/components/Toolbar';
-import { ask, type Mode, type Provider } from '@/lib/api';
-import { AI_COLORS, toPageAnnotations } from '@/lib/annotations';
+import { RichText } from '@/components/RichText';
+import { ask, buildRequest, type Mode, type Provider } from '@/lib/api';
+import { AI_COLORS, applyModelOutput } from '@/lib/annotations';
 import { uid } from '@/lib/ink';
+import { renderPageView } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import { C, R } from '@/lib/theme';
-import type { ChatMessage, Chip } from '@/lib/types';
+import type { ChatMessage, Chip, Rect } from '@/lib/types';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
@@ -16,6 +18,8 @@ type Props = {
   chips: Chip[];
   setChips: (c: Chip[]) => void;
   onClose: () => void;
+  /** Page-space rect currently visible on screen. */
+  getView: () => Rect;
 };
 
 const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
@@ -24,7 +28,7 @@ const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
   { mode: 'transcribe', icon: 'text-recognition', label: 'To text', prompt: 'Convert my handwriting to text.' },
 ];
 
-export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
+export function AgentPanel({ pageId, chips, setChips, onClose, getView }: Props) {
   const chat = useStore((s) => s.pages[pageId]?.chat ?? []);
   const updatePage = useStore((s) => s.updatePage);
   // Gemini is wired up on the server but hidden in the UI for now.
@@ -42,14 +46,23 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
     setChips([]);
     setBusy(true);
     try {
-      const res = await ask(provider, mode, history);
-      // Annotations are relative to the first image chip of this message.
-      const anchor = chips.find((c) => c.image);
-      const annotations = anchor ? toPageAnnotations(res.annotations, anchor.bounds) : [];
-      updatePage(pageId, (p) => ({
-        chat: [...p.chat, { id: uid(), role: 'assistant', text: res.reply, transcription: res.transcription }],
-        annotations: [...p.annotations, ...annotations],
-      }));
+      // Always send what's on screen, so Claude can see context and write anywhere visible — selection or not.
+      const viewRect = getView();
+      const pageView = renderPageView(useStore.getState().pages[pageId], viewRect);
+      const { messages, regions } = buildRequest(history, { view: pageView.image, viewRect, text: pageView.context });
+      const res = await ask(provider, mode, messages);
+      const add = applyModelOutput(res.annotations, regions);
+      const wrote = add.annotations.length + add.texts.length + add.maths.length > 0;
+      updatePage(
+        pageId,
+        (p) => ({
+          chat: [...p.chat, { id: uid(), role: 'assistant', text: res.reply, transcription: res.transcription }],
+          annotations: [...p.annotations, ...add.annotations],
+          texts: [...p.texts, ...add.texts],
+          maths: [...(p.maths ?? []), ...add.maths],
+        }),
+        wrote, // anything Claude puts on the page is one undo step
+      );
     } catch (e) {
       updatePage(pageId, (p) => ({
         chat: [...p.chat, { id: uid(), role: 'assistant', text: e instanceof Error ? e.message : String(e), error: true }],
@@ -101,7 +114,7 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
         {chat.length === 0 && (
           <View style={styles.empty}>
             <MaterialCommunityIcons name="lasso" size={28} color={C.faint} />
-            <Text style={styles.emptyText}>Lasso part of your page, then tap “Ask about this”.</Text>
+            <Text style={styles.emptyText}>Ask anything — Claude can see your screen and write on the page. Lasso something first to point at it.</Text>
           </View>
         )}
         {chat.map((m) =>
@@ -112,8 +125,12 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
             </View>
           ) : (
             <View key={m.id} style={styles.aiMsg}>
-              <Text style={[styles.msgText, m.error && { color: C.danger }]}>{m.text}</Text>
-              {!!m.transcription && <Text style={styles.mono}>{m.transcription}</Text>}
+              {m.error ? <Text style={[styles.msgText, { color: C.danger }]}>{m.text}</Text> : <RichText text={m.text} />}
+              {!!m.transcription && (
+                <View style={styles.transcript}>
+                  <RichText text={m.transcription} />
+                </View>
+              )}
               {!m.error && (
                 <View style={styles.msgActions}>
                   <Action icon="pin-outline" label="Pin to page" onPress={() => pinNote(m.text)} />
@@ -140,16 +157,14 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
           </ScrollView>
         )}
 
-        {chips.length > 0 && (
-          <View style={styles.quick}>
-            {QUICK.map((q) => (
-              <Pressable key={q.mode} disabled={busy} onPress={() => send(q.mode, input || q.prompt)} style={({ pressed }) => [styles.quickBtn, pressed && { backgroundColor: C.selected }, busy && { opacity: 0.4 }]}>
-                <MaterialCommunityIcons name={q.icon} size={15} color={C.icon} />
-                <Text style={styles.quickText}>{q.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-        )}
+        <View style={styles.quick}>
+          {QUICK.map((q) => (
+            <Pressable key={q.mode} disabled={busy} onPress={() => send(q.mode, input || q.prompt)} style={({ pressed }) => [styles.quickBtn, pressed && { backgroundColor: C.selected }, busy && { opacity: 0.4 }]}>
+              <MaterialCommunityIcons name={q.icon} size={15} color={C.icon} />
+              <Text style={styles.quickText}>{q.label}</Text>
+            </Pressable>
+          ))}
+        </View>
 
         <View style={styles.inputRow}>
           <TextInput
@@ -208,7 +223,7 @@ const styles = StyleSheet.create({
   userMsg: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: C.bg, borderRadius: R.lg, padding: 10, gap: 8 },
   aiMsg: { alignSelf: 'stretch', gap: 8 },
   msgText: { fontSize: 15, lineHeight: 22, color: C.text },
-  mono: { fontFamily: 'monospace', fontSize: 13, color: C.text, backgroundColor: C.bg, padding: 10, borderRadius: R.sm },
+  transcript: { backgroundColor: C.bg, padding: 10, borderRadius: R.sm },
   msgActions: { flexDirection: 'row', gap: 16 },
   action: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   actionText: { fontSize: 13, color: C.muted },

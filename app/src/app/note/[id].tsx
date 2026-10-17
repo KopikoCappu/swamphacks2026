@@ -28,6 +28,12 @@ export default function NoteScreen() {
   const viewport = useViewport();
   const canvasSize = useRef({ width: 0, height: 0 });
   const center = (): [number, number] => [canvasSize.current.width / 2, canvasSize.current.height / 2];
+  // Page-space rect currently on screen (sent to Claude as the "page view").
+  const visibleRect = () => {
+    const sc = viewport.scale.get();
+    const { width, height } = canvasSize.current;
+    return { x: -viewport.tx.get() / sc, y: -viewport.ty.get() / sc, w: Math.max(1, width) / sc, h: Math.max(1, height) / sc };
+  };
 
   // Keyboard shortcuts (web / tablets with a keyboard): Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y, P H E L T, Esc
   useEffect(() => {
@@ -97,7 +103,7 @@ export default function NoteScreen() {
           <ZoomPill viewport={viewport} getCenter={center} />
           {selection && <AskButton selection={selection} viewport={viewport} onPress={addSelectionToAI} />}
         </View>
-        {agentOpen && <AgentPanel pageId={id} chips={chips} setChips={setChips} onClose={() => setAgentOpen(false)} />}
+        {agentOpen && <AgentPanel pageId={id} chips={chips} setChips={setChips} onClose={() => setAgentOpen(false)} getView={visibleRect} />}
       </View>
 
       {menu && (

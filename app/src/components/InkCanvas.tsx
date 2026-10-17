@@ -3,9 +3,10 @@ import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { Platform, StyleSheet, TextInput, View } from 'react-native';
 import { GestureDetector, PointerType, usePanGesture, usePinchGesture, useSimultaneousGestures } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { MathView } from '@/components/MathView';
 import { isDark, PaperBackground } from '@/components/PaperBackground';
 import { annotationPath } from '@/lib/annotations';
-import { buildPath, selectWithLasso, shapePoints, snapTextTop, strokePath, strokesHitAt, TEXT_LINE_HEIGHT, uid } from '@/lib/ink';
+import { buildPath, mathBounds, rectContains, selectWithLasso, shapePoints, snapTextTop, strokePath, strokesHitAt, TEXT_LINE_HEIGHT, textBounds, uid } from '@/lib/ink';
 import { skImageFor } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
@@ -118,7 +119,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
         const stroke: Stroke = { id: uid(), tool: 'shape', color, size: sizes.pen, points: shapePoints(shapeKind, a[0], a[1], b[0], b[1], sizes.pen), stylus: false };
         updatePage(pageId, (p) => ({ strokes: [...p.strokes, stroke] }), true);
       } else if (tool === 'lasso') {
-        onSelRef.current(selectWithLasso(pts, page.strokes, page.texts, page.images));
+        onSelRef.current(selectWithLasso(pts, page.strokes, page.texts, page.images, page.maths));
       } else if (tool === 'text') {
         const [x, y] = pts[0];
         const id = uid();
@@ -174,9 +175,22 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
   function erase(x: number, y: number) {
     setEraserAt({ x, y });
     const { pages, sizes } = useStore.getState();
-    const hit = strokesHitAt(pages[pageId]?.strokes ?? [], x, y, sizes.eraser / viewport.scale.get());
-    if (!hit.length) return;
-    updatePage(pageId, (p) => ({ strokes: p.strokes.filter((s) => !hit.includes(s.id)) }), !g.current.erasedOnce);
+    const page = pages[pageId];
+    if (!page) return;
+    const hit = strokesHitAt(page.strokes, x, y, sizes.eraser / viewport.scale.get());
+    // Typed text and equations are erased whole when the eraser touches them.
+    const hitText = page.texts.filter((t) => rectContains(textBounds(t), x, y)).map((t) => t.id);
+    const hitMath = (page.maths ?? []).filter((m) => rectContains(mathBounds(m), x, y)).map((m) => m.id);
+    if (!hit.length && !hitText.length && !hitMath.length) return;
+    updatePage(
+      pageId,
+      (p) => ({
+        strokes: p.strokes.filter((s) => !hit.includes(s.id)),
+        texts: p.texts.filter((t) => !hitText.includes(t.id)),
+        maths: (p.maths ?? []).filter((m) => !hitMath.includes(m.id)),
+      }),
+      !g.current.erasedOnce,
+    );
     g.current.erasedOnce = true;
   }
 
@@ -279,8 +293,25 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
               setEditingText(null);
               if (!t.text.trim()) updatePage(pageId, (p) => ({ texts: p.texts.filter((x) => x.id !== t.id) }));
             }}
-            style={[styles.textBlock, { left: t.x, top: t.y, width: t.width, color: textColor }, selection?.textIds.includes(t.id) && styles.textSelected]}
+            style={[styles.textBlock, { left: t.x, top: t.y, width: t.width, color: t.color ?? textColor }, selection?.textIds.includes(t.id) && styles.textSelected]}
           />
+        ))}
+      </Animated.View>
+
+      {/* Equations (KaTeX on web). Their measured size feeds hit-testing, lasso and AI placement. */}
+      <Animated.View style={[styles.layer, overlayStyle]} pointerEvents="none">
+        {(page.maths ?? []).map((m) => (
+          <View
+            key={m.id}
+            style={[styles.math, { left: m.x, top: m.y }, selection?.mathIds.includes(m.id) && styles.textSelected]}
+            onLayout={(e) => {
+              const { width, height } = e.nativeEvent.layout;
+              if (Math.abs(width - m.w) > 2 || Math.abs(height - m.h) > 2)
+                updatePage(pageId, (p) => ({ maths: (p.maths ?? []).map((x) => (x.id === m.id ? { ...x, w: width, h: height } : x)) }));
+            }}
+          >
+            <MathView latex={m.latex} color={m.color ?? textColor} />
+          </View>
         ))}
       </Animated.View>
 
@@ -313,7 +344,10 @@ function AnnotationStroke({ a }: { a: Annotation }) {
   useEffect(() => {
     if (delay !== null) end.set(withDelay(delay, withTiming(1, { duration: 700 })));
   }, [delay, end]);
+  const fade = useDerivedValue(() => end.get() * 0.28);
   if (!path) return null;
+  // Highlights fade in as a translucent fill; everything else "draws itself" with a stroke trim.
+  if (a.kind === 'highlight') return <Path path={path} color={a.color} opacity={fade} />;
   return <Path path={path} color={a.color} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" end={end} />;
 }
 
@@ -343,4 +377,5 @@ const styles = StyleSheet.create({
   },
   textSelected: { backgroundColor: 'rgba(47,111,235,0.10)', borderRadius: 4 },
   note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold', fontSize: 26, lineHeight: 28 },
+  math: { position: 'absolute', paddingHorizontal: 4, borderRadius: 4 },
 });
