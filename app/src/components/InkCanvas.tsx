@@ -8,6 +8,7 @@ import { annotationPath } from '@/lib/annotations';
 import { buildPath, selectWithLasso, snapTextTop, strokePath, strokesHitAt, TEXT_LINE_HEIGHT, uid } from '@/lib/ink';
 import { skImageFor } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
+import { C } from '@/lib/theme';
 import type { Annotation, Point, Selection, Stroke } from '@/lib/types';
 
 type Props = {
@@ -131,12 +132,12 @@ export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
               s.tool === 'highlighter' ? (
                 <Path key={s.id} path={strokePath(s)} color={s.color} opacity={0.35} style="stroke" strokeWidth={s.size} strokeCap="round" strokeJoin="round" />
               ) : (
-                <Path key={s.id} path={strokePath(s)} color={selected.has(s.id) ? '#3E63DD' : s.color} />
+                <Path key={s.id} path={strokePath(s)} color={selected.has(s.id) ? C.focus : s.color} />
               ),
             )}
 
             {livePath && tool === 'lasso' && (
-              <Path path={livePath} color="#3E63DD" style="stroke" strokeWidth={2}>
+              <Path path={livePath} color={C.focus} style="stroke" strokeWidth={1.5}>
                 <DashPathEffect intervals={[8, 6]} />
               </Path>
             )}
@@ -150,7 +151,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
             )}
 
             {selection && (
-              <Rect x={selection.bounds.x - 12} y={selection.bounds.y - 12} width={selection.bounds.w + 24} height={selection.bounds.h + 24} color="#3E63DD" style="stroke" strokeWidth={1.5}>
+              <Rect x={selection.bounds.x - 12} y={selection.bounds.y - 12} width={selection.bounds.w + 24} height={selection.bounds.h + 24} color={C.focus} style="stroke" strokeWidth={1}>
                 <DashPathEffect intervals={[6, 5]} />
               </Rect>
             )}
@@ -230,15 +231,15 @@ function AiNote({ a }: { a: Annotation }) {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFDF8', overflow: 'hidden' },
+  root: { flex: 1, backgroundColor: C.paper, overflow: 'hidden' },
   textBlock: {
     position: 'absolute',
     fontSize: 18,
     lineHeight: TEXT_LINE_HEIGHT,
-    color: '#1F2328',
+    color: C.text,
     paddingHorizontal: 4,
     paddingVertical: 0,
   },
-  textSelected: { backgroundColor: 'rgba(62,99,221,0.12)', borderRadius: 4 },
+  textSelected: { backgroundColor: 'rgba(47,111,235,0.10)', borderRadius: 4 },
   note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold', fontSize: 26, lineHeight: 28 },
 });

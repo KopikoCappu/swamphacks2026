@@ -1,13 +1,16 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { AgentPanel } from '@/components/AgentPanel';
 import { InkCanvas } from '@/components/InkCanvas';
-import { Toolbar } from '@/components/Toolbar';
+import { ColorMenu, MoreMenu, SideControls, TopBar, type Menu } from '@/components/Toolbar';
 import { uid } from '@/lib/ink';
 import { renderSelection } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
+import { C, R, shadow } from '@/lib/theme';
 import type { Chip, Selection, Tool } from '@/lib/types';
 
 const TOOL_KEYS: Record<string, Tool> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', t: 'text' };
@@ -19,6 +22,7 @@ export default function NoteScreen() {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [chips, setChips] = useState<Chip[]>([]);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [menu, setMenu] = useState<Menu>(null);
 
   // Keyboard shortcuts (web / tablets with a keyboard): Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y, P H E L T, Esc
   useEffect(() => {
@@ -40,6 +44,7 @@ export default function NoteScreen() {
         setTool(TOOL_KEYS[key]);
       } else if (key === 'escape') {
         setSelection(null);
+        setMenu(null);
       }
     };
     window.addEventListener('keydown', onKey);
@@ -70,53 +75,58 @@ export default function NoteScreen() {
   }
 
   return (
-    <View style={styles.root}>
-      <Stack.Screen
-        options={{
-          headerTitle: () => (
-            <TextInput
-              value={page.title}
-              onChangeText={(title) => updatePage(id, () => ({ title }))}
-              style={styles.title}
-              placeholder="Untitled"
-            />
-          ),
-        }}
-      />
-      <Toolbar pageId={id} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} onAddImage={addImage} />
+    <SafeAreaView style={styles.root} edges={['top', 'left', 'right']}>
+      <Stack.Screen options={{ headerShown: false }} />
+      <TopBar pageId={id} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} menu={menu} setMenu={setMenu} />
       <View style={styles.body}>
         <View style={{ flex: 1 }}>
           <InkCanvas pageId={id} selection={selection} onSelectionChange={setSelection} />
+          <SideControls pageId={id} />
           {selection && (
             <Pressable
-              style={[styles.askBtn, { left: selection.bounds.x + selection.bounds.w - 120, top: selection.bounds.y + selection.bounds.h + 20 }]}
+              style={[styles.askBtn, shadow, { left: Math.max(64, selection.bounds.x + selection.bounds.w - 150), top: selection.bounds.y + selection.bounds.h + 20 }]}
               onPress={addSelectionToAI}
             >
-              <Text style={styles.askText}>✨ Add to AI</Text>
+              <MaterialCommunityIcons name="creation" size={16} color={C.onPrimary} />
+              <Text style={styles.askText}>Ask about this</Text>
             </Pressable>
           )}
         </View>
         {agentOpen && <AgentPanel pageId={id} chips={chips} setChips={setChips} onClose={() => setAgentOpen(false)} />}
       </View>
-    </View>
+
+      {menu && (
+        <>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setMenu(null)} />
+          {menu === 'color' ? (
+            <ColorMenu />
+          ) : (
+            <MoreMenu
+              pageId={id}
+              onAddImage={(src) => {
+                setMenu(null);
+                addImage(src);
+              }}
+            />
+          )}
+        </>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFFDF8' },
+  root: { flex: 1, backgroundColor: C.surface },
   body: { flex: 1, flexDirection: 'row' },
-  title: { fontSize: 18, fontWeight: '700', minWidth: 200, color: '#1F2328' },
   askBtn: {
     position: 'absolute',
-    backgroundColor: '#6E56CF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: C.primary,
     paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
+    height: 38,
+    borderRadius: R.pill,
   },
-  askText: { color: 'white', fontWeight: '700' },
+  askText: { color: C.onPrimary, fontWeight: '600', fontSize: 14 },
 });

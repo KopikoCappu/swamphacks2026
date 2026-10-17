@@ -1,37 +1,148 @@
-import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { useEffect, useState, type ComponentProps } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SIZE_OPTIONS, useStore } from '@/lib/store';
+import { C, R, shadow } from '@/lib/theme';
 import type { Paper, Tool } from '@/lib/types';
 
-const TOOLS: { id: Tool; label: string }[] = [
-  { id: 'pen', label: '✏️ Pen' },
-  { id: 'highlighter', label: '🖍️ Mark' },
-  { id: 'eraser', label: '🧽 Erase' },
-  { id: 'lasso', label: '➰ Lasso' },
-  { id: 'text', label: '🔤 Text' },
+type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
+export type Menu = 'color' | 'more' | null;
+
+const TOOLS: { id: Tool; icon: IconName }[] = [
+  { id: 'pen', icon: 'pencil-outline' },
+  { id: 'highlighter', icon: 'marker' },
+  { id: 'eraser', icon: 'eraser' },
+  { id: 'lasso', icon: 'lasso' },
+  { id: 'text', icon: 'format-text' },
 ];
-const PEN_COLORS = ['#1F2328', '#3E63DD', '#E5484D', '#30A46C', '#8E4EC6', '#F76B15'];
-const HIGHLIGHTER_COLORS = ['#FFD60A', '#7CE38B', '#7DD3FC', '#F9A8D4'];
-const PAPERS: { id: Paper; label: string }[] = [
-  { id: 'lined', label: '📓 Lined' },
-  { id: 'grid', label: '▦ Grid' },
-  { id: 'dots', label: '⠿ Dots' },
-  { id: 'blank', label: '⬜ Blank' },
+const PEN_COLORS = ['#1C1C1E', '#636366', '#2F6FEB', '#E5484D', '#30A46C', '#8E4EC6', '#F76B15', '#0E9F9F'];
+const HIGHLIGHTER_COLORS = ['#FFD60A', '#7CE38B', '#7DD3FC', '#F9A8D4', '#FDBA74'];
+const PAPERS: { id: Paper; icon: IconName; label: string }[] = [
+  { id: 'lined', icon: 'notebook-outline', label: 'Lined' },
+  { id: 'grid', icon: 'grid', label: 'Grid' },
+  { id: 'dots', icon: 'dots-grid', label: 'Dots' },
+  { id: 'blank', icon: 'checkbox-blank-outline', label: 'Blank' },
 ];
 
-type Props = {
+// ---------------------------------------------------------------- top bar
+
+type TopBarProps = {
   pageId: string;
   agentOpen: boolean;
   onToggleAgent: () => void;
-  onAddImage: (source: 'camera' | 'library') => void;
+  menu: Menu;
+  setMenu: (m: Menu) => void;
 };
 
-export function Toolbar({ pageId, agentOpen, onToggleAgent, onAddImage }: Props) {
-  const s = useStore();
-  const page = s.pages[pageId];
-  const canUndo = (s.undo[pageId]?.length ?? 0) > 0;
-  const canRedo = (s.redo[pageId]?.length ?? 0) > 0;
-  const paper = page?.paper ?? 'blank';
+export function TopBar({ pageId, agentOpen, onToggleAgent, menu, setMenu }: TopBarProps) {
+  const title = useStore((s) => s.pages[pageId]?.title ?? '');
+  const tool = useStore((s) => s.tool);
+  const color = useStore((s) => (s.tool === 'highlighter' ? s.highlighterColor : s.color));
+  const { setTool, updatePage } = useStore.getState();
+
+  return (
+    <View style={styles.topBar}>
+      <View style={styles.left}>
+        <IconBtn icon="chevron-left" onPress={() => router.back()} />
+        <TextInput
+          value={title}
+          onChangeText={(t) => updatePage(pageId, () => ({ title: t }))}
+          placeholder="Untitled"
+          placeholderTextColor={C.muted}
+          style={styles.title}
+        />
+      </View>
+
+      <View style={styles.right}>
+        {TOOLS.map((t) => (
+          <IconBtn key={t.id} icon={t.icon} active={tool === t.id} onPress={() => setTool(t.id)} />
+        ))}
+        <Pressable onPress={() => setMenu(menu === 'color' ? null : 'color')} style={styles.colorBtn} hitSlop={6}>
+          <View style={[styles.colorDot, { backgroundColor: color }]} />
+        </Pressable>
+        <View style={styles.divider} />
+        <IconBtn icon="dots-horizontal" active={menu === 'more'} onPress={() => setMenu(menu === 'more' ? null : 'more')} />
+        <Pressable onPress={onToggleAgent} style={[styles.askBtn, agentOpen && { opacity: 0.85 }]}>
+          <MaterialCommunityIcons name="creation" size={16} color={C.onPrimary} />
+          <Text style={styles.askText}>Ask</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------- left rail (size + undo/redo)
+
+export function SideControls({ pageId }: { pageId: string }) {
+  const tool = useStore((s) => s.tool);
+  const sizes = useStore((s) => s.sizes);
+  const color = useStore((s) => (s.tool === 'highlighter' ? s.highlighterColor : s.color));
+  const canUndo = useStore((s) => (s.undo[pageId]?.length ?? 0) > 0);
+  const canRedo = useStore((s) => (s.redo[pageId]?.length ?? 0) > 0);
+  const { setSize, undoPage, redoPage } = useStore.getState();
+  const sized = tool === 'pen' || tool === 'highlighter' || tool === 'eraser' ? tool : null;
+
+  return (
+    <View style={styles.rail} pointerEvents="box-none">
+      {sized && (
+        <View style={[styles.railCard, shadow]}>
+          {[...SIZE_OPTIONS[sized]].reverse().map((size) => {
+            const d = Math.min(22, Math.max(4, sized === 'pen' ? size * 1.5 : size * 0.45));
+            const active = sizes[sized] === size;
+            return (
+              <Pressable key={size} onPress={() => setSize(sized, size)} style={styles.sizeBtn}>
+                <View
+                  style={[
+                    { width: d, height: d, borderRadius: d / 2 },
+                    sized === 'eraser'
+                      ? { borderWidth: 1.5, borderColor: active ? C.text : C.faint }
+                      : { backgroundColor: color, opacity: active ? 1 : 0.35 },
+                  ]}
+                />
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+      <View style={[styles.railCard, shadow]}>
+        <IconBtn icon="undo" onPress={() => undoPage(pageId)} disabled={!canUndo} />
+        <IconBtn icon="redo" onPress={() => redoPage(pageId)} disabled={!canRedo} />
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------- popovers
+
+export function ColorMenu() {
+  const tool = useStore((s) => s.tool);
+  const color = useStore((s) => s.color);
+  const highlighterColor = useStore((s) => s.highlighterColor);
+  const { setColor, setHighlighterColor } = useStore.getState();
+  const hl = tool === 'highlighter';
+  const colors = hl ? HIGHLIGHTER_COLORS : PEN_COLORS;
+  const current = hl ? highlighterColor : color;
+
+  return (
+    <View style={[styles.popover, shadow, { right: 150, width: 228 }]}>
+      <Text style={styles.popLabel}>{hl ? 'Highlighter' : 'Ink'}</Text>
+      <View style={styles.swatches}>
+        {colors.map((c) => (
+          <Pressable key={c} onPress={() => (hl ? setHighlighterColor(c) : setColor(c))} style={[styles.swatchRing, current === c && { borderColor: C.text }]}>
+            <View style={[styles.swatch, { backgroundColor: c }]} />
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+export function MoreMenu({ pageId, onAddImage }: { pageId: string; onAddImage: (s: 'camera' | 'library') => void }) {
+  const paper = useStore((s) => s.pages[pageId]?.paper ?? 'blank');
+  const penOnly = useStore((s) => s.penOnly);
+  const hasAiInk = useStore((s) => (s.pages[pageId]?.annotations.length ?? 0) > 0);
+  const { updatePage, setPenOnly } = useStore.getState();
   const [confirmClear, setConfirmClear] = useState(false);
 
   // Two-tap clear: the second tap must come within 3s. (No modal dialogs.)
@@ -41,110 +152,102 @@ export function Toolbar({ pageId, agentOpen, onToggleAgent, onAddImage }: Props)
     return () => clearTimeout(t);
   }, [confirmClear]);
 
-  const sizedTool = s.tool === 'pen' || s.tool === 'highlighter' || s.tool === 'eraser' ? s.tool : s.tool === 'text' ? null : 'pen';
-  const colors = s.tool === 'highlighter' ? HIGHLIGHTER_COLORS : PEN_COLORS;
-  const activeColor = s.tool === 'highlighter' ? s.highlighterColor : s.color;
-
-  function cyclePaper() {
-    const i = PAPERS.findIndex((p) => p.id === paper);
-    const next = PAPERS[(i + 1) % PAPERS.length].id;
-    s.updatePage(pageId, () => ({ paper: next }));
-  }
-
   function clearPage() {
     if (!confirmClear) return setConfirmClear(true);
     setConfirmClear(false);
-    s.updatePage(pageId, () => ({ strokes: [], texts: [], images: [], annotations: [] }), true); // undoable
+    updatePage(pageId, () => ({ strokes: [], texts: [], images: [], annotations: [] }), true); // undoable
   }
 
   return (
-    <View style={styles.bar}>
-      <View style={styles.group}>
-        <Btn label="↩️" onPress={() => s.undoPage(pageId)} disabled={!canUndo} />
-        <Btn label="↪️" onPress={() => s.redoPage(pageId)} disabled={!canRedo} />
-      </View>
-
-      <View style={styles.group}>
-        {TOOLS.map((t) => (
-          <Btn key={t.id} label={t.label} active={s.tool === t.id} onPress={() => s.setTool(t.id)} />
+    <View style={[styles.popover, shadow, { right: 76, width: 280 }]}>
+      <Text style={styles.popLabel}>Paper</Text>
+      <View style={styles.paperRow}>
+        {PAPERS.map((p) => (
+          <Pressable key={p.id} onPress={() => updatePage(pageId, () => ({ paper: p.id }))} style={[styles.paperBtn, paper === p.id && styles.paperActive]}>
+            <MaterialCommunityIcons name={p.icon} size={20} color={paper === p.id ? C.text : C.muted} />
+            <Text style={[styles.paperText, paper === p.id && { color: C.text }]}>{p.label}</Text>
+          </Pressable>
         ))}
       </View>
 
-      {s.tool !== 'eraser' && s.tool !== 'lasso' && (
-        <View style={styles.group}>
-          {colors.map((c) => (
-            <Pressable
-              key={c}
-              onPress={() => (s.tool === 'highlighter' ? s.setHighlighterColor(c) : s.setColor(c))}
-              style={[styles.swatch, { backgroundColor: c }, activeColor === c && styles.swatchActive]}
-            />
-          ))}
-        </View>
-      )}
+      <View style={styles.sep} />
+      <Row icon="image-outline" label="Insert photo" onPress={() => onAddImage('library')} />
+      <Row icon="camera-outline" label="Take photo" onPress={() => onAddImage('camera')} />
+      <Row icon="draw-pen" label="Pen only (palm rejection)" onPress={() => setPenOnly(!penOnly)} right={<Toggle on={penOnly} />} />
 
-      {sizedTool && (
-        <View style={styles.group}>
-          {SIZE_OPTIONS[sizedTool].map((size) => {
-            // Preview dot: eraser size is a radius, the others are widths.
-            const d = Math.min(26, Math.max(4, sizedTool === 'eraser' ? size * 0.5 : sizedTool === 'highlighter' ? size * 0.5 : size * 1.6));
-            const dotColor = sizedTool === 'eraser' ? '#B5AFA2' : sizedTool === 'highlighter' ? s.highlighterColor : s.color;
-            return (
-              <Pressable key={size} onPress={() => s.setSize(sizedTool, size)} style={[styles.sizeBtn, s.sizes[sizedTool] === size && styles.btnActive]}>
-                <View style={{ width: d, height: d, borderRadius: d / 2, backgroundColor: dotColor }} />
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
-      <View style={styles.group}>
-        <Btn label={PAPERS.find((p) => p.id === paper)!.label} onPress={cyclePaper} />
-        <Btn label="📷" onPress={() => onAddImage('camera')} />
-        <Btn label="🖼️" onPress={() => onAddImage('library')} />
-        <Btn label={s.penOnly ? '🖊️ Pen only' : '👆 Touch draw'} active={s.penOnly} onPress={() => s.setPenOnly(!s.penOnly)} />
-        {(page?.annotations.length ?? 0) > 0 && <Btn label="🧹 AI ink" onPress={() => s.updatePage(pageId, () => ({ annotations: [] }), true)} />}
-        <Btn label={confirmClear ? 'Tap again to clear' : '🗑️'} danger={confirmClear} onPress={clearPage} />
-      </View>
-
-      <Btn label="✨ Ask AI" active={agentOpen} onPress={onToggleAgent} accent />
+      <View style={styles.sep} />
+      {hasAiInk && <Row icon="broom" label="Clear AI ink" onPress={() => updatePage(pageId, () => ({ annotations: [] }), true)} />}
+      <Row icon="delete-outline" label={confirmClear ? 'Tap again to clear page' : 'Clear page'} danger onPress={clearPage} />
     </View>
   );
 }
 
-type BtnProps = { label: string; active?: boolean; onPress: () => void; accent?: boolean; disabled?: boolean; danger?: boolean };
+// ---------------------------------------------------------------- primitives
 
-function Btn({ label, active, onPress, accent, disabled, danger }: BtnProps) {
+export function IconBtn({ icon, onPress, active, disabled, size = 22 }: { icon: IconName; onPress: () => void; active?: boolean; disabled?: boolean; size?: number }) {
   return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      style={[styles.btn, active && styles.btnActive, accent && styles.accent, accent && active && styles.accentActive, danger && styles.danger, disabled && { opacity: 0.35 }]}
-    >
-      <Text style={[styles.btnText, (accent || danger) && { color: 'white' }]}>{label}</Text>
+    <Pressable onPress={onPress} disabled={disabled} hitSlop={4} style={({ pressed }) => [styles.iconBtn, (active || pressed) && { backgroundColor: C.selected }, disabled && { opacity: 0.3 }]}>
+      <MaterialCommunityIcons name={icon} size={size} color={active ? C.text : C.icon} />
     </Pressable>
   );
 }
 
+function Row({ icon, label, onPress, danger, right }: { icon: IconName; label: string; onPress: () => void; danger?: boolean; right?: React.ReactNode }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && { backgroundColor: C.selected }]}>
+      <MaterialCommunityIcons name={icon} size={20} color={danger ? C.danger : C.icon} />
+      <Text style={[styles.rowText, danger && { color: C.danger }]}>{label}</Text>
+      {right}
+    </Pressable>
+  );
+}
+
+function Toggle({ on }: { on: boolean }) {
+  return (
+    <View style={[styles.toggle, on && { backgroundColor: C.text }]}>
+      <View style={[styles.knob, on && { transform: [{ translateX: 14 }] }]} />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  bar: {
+  topBar: {
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#F6F4EF',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+    backgroundColor: C.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#D9D4C7',
-    flexWrap: 'wrap',
+    borderColor: C.border,
+    zIndex: 10,
   },
-  group: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  btn: { paddingHorizontal: 10, paddingVertical: 7, borderRadius: 8 },
-  btnActive: { backgroundColor: '#E4DFD3' },
-  btnText: { fontSize: 15, color: '#1F2328' },
-  accent: { backgroundColor: '#6E56CF', marginLeft: 'auto' },
-  accentActive: { backgroundColor: '#5B45B5' },
-  danger: { backgroundColor: '#E5484D' },
-  swatch: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: 'transparent' },
-  swatchActive: { borderColor: '#1F2328', transform: [{ scale: 1.15 }] },
-  sizeBtn: { width: 34, height: 34, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  left: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 1 },
+  right: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  title: { fontSize: 16, fontWeight: '600', color: C.text, minWidth: 120, maxWidth: 320, paddingVertical: 6 },
+  divider: { width: StyleSheet.hairlineWidth, height: 24, backgroundColor: C.border, marginHorizontal: 6 },
+  iconBtn: { width: 40, height: 40, borderRadius: R.sm, alignItems: 'center', justifyContent: 'center' },
+  colorBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  colorDot: { width: 22, height: 22, borderRadius: 11, borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)' },
+  askBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.primary, paddingHorizontal: 14, height: 36, borderRadius: R.pill, marginLeft: 6 },
+  askText: { color: C.onPrimary, fontWeight: '600', fontSize: 14 },
+
+  rail: { position: 'absolute', left: 12, top: 0, bottom: 0, justifyContent: 'center', gap: 10 },
+  railCard: { backgroundColor: C.surface, borderRadius: R.lg, paddingVertical: 6, paddingHorizontal: 4, alignItems: 'center', borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  sizeBtn: { width: 40, height: 34, alignItems: 'center', justifyContent: 'center' },
+
+  popover: { position: 'absolute', top: 64, backgroundColor: C.surface, borderRadius: R.lg, padding: 12, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, zIndex: 20 },
+  popLabel: { fontSize: 12, fontWeight: '600', color: C.muted, textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 8 },
+  swatches: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  swatchRing: { width: 46, height: 46, borderRadius: 23, borderWidth: 2, borderColor: 'transparent', alignItems: 'center', justifyContent: 'center' },
+  swatch: { width: 34, height: 34, borderRadius: 17 },
+  paperRow: { flexDirection: 'row', gap: 6 },
+  paperBtn: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 8, borderRadius: R.sm },
+  paperActive: { backgroundColor: C.selected },
+  paperText: { fontSize: 12, color: C.muted },
+  sep: { height: StyleSheet.hairlineWidth, backgroundColor: C.border, marginVertical: 8 },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 8, paddingVertical: 10, borderRadius: R.sm },
+  rowText: { flex: 1, fontSize: 15, color: C.text },
+  toggle: { width: 34, height: 20, borderRadius: 10, backgroundColor: C.faint, padding: 2 },
+  knob: { width: 16, height: 16, borderRadius: 8, backgroundColor: C.surface },
 });

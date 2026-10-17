@@ -1,10 +1,15 @@
-import { useRef, useState, type ComponentRef } from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useRef, useState, type ComponentProps, type ComponentRef } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { IconBtn } from '@/components/Toolbar';
 import { ask, type Mode, type Provider } from '@/lib/api';
 import { AI_COLORS, toPageAnnotations } from '@/lib/annotations';
 import { uid } from '@/lib/ink';
 import { useStore } from '@/lib/store';
+import { C, R } from '@/lib/theme';
 import type { ChatMessage, Chip } from '@/lib/types';
+
+type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 type Props = {
   pageId: string;
@@ -13,10 +18,10 @@ type Props = {
   onClose: () => void;
 };
 
-const QUICK: { mode: Mode; label: string; prompt: string }[] = [
-  { mode: 'mistake', label: '🔍 Find my mistake', prompt: 'Can you find my mistake?' },
-  { mode: 'explain', label: '💡 Explain', prompt: 'Explain this to me.' },
-  { mode: 'transcribe', label: '✍️ To text', prompt: 'Convert my handwriting to text.' },
+const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
+  { mode: 'mistake', icon: 'magnify', label: 'Find mistake', prompt: 'Can you find my mistake?' },
+  { mode: 'explain', icon: 'lightbulb-outline', label: 'Explain', prompt: 'Explain this to me.' },
+  { mode: 'transcribe', icon: 'text-recognition', label: 'To text', prompt: 'Convert my handwriting to text.' },
 ];
 
 export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
@@ -46,7 +51,7 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
       }));
     } catch (e) {
       updatePage(pageId, (p) => ({
-        chat: [...p.chat, { id: uid(), role: 'assistant', text: `⚠️ ${e instanceof Error ? e.message : e}`, error: true }],
+        chat: [...p.chat, { id: uid(), role: 'assistant', text: e instanceof Error ? e.message : String(e), error: true }],
       }));
     } finally {
       setBusy(false);
@@ -57,7 +62,7 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
   /** Anchor point for pinning content: just right of the most recent selection on this page. */
   function lastAnchor() {
     const last = [...chat].reverse().find((m) => m.chips?.length)?.chips?.[0]?.bounds;
-    return last ?? { x: 40, y: 40, w: 0, h: 0 };
+    return last ?? { x: 80, y: 80, w: 0, h: 0 };
   }
 
   function pinNote(text: string) {
@@ -79,119 +84,146 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
     updatePage(pageId, (p) => ({ texts: [...p.texts, { id: uid(), x: b.x, y: b.y + b.h + 12, width: Math.max(300, b.w), text }] }), true);
   }
 
+  const canSend = !busy && (!!input.trim() || chips.length > 0);
+
   return (
     <View style={styles.panel}>
       <View style={styles.header}>
         <View style={styles.segment}>
           {(['claude', 'gemini'] as Provider[]).map((p) => (
             <Pressable key={p} onPress={() => setProvider(p)} style={[styles.segBtn, provider === p && styles.segActive]}>
-              <Text style={[styles.segText, provider === p && { color: 'white' }]}>{p === 'claude' ? 'Claude' : 'Gemini'}</Text>
+              <Text style={[styles.segText, provider === p && { color: C.text }]}>{p === 'claude' ? 'Claude' : 'Gemini'}</Text>
             </Pressable>
           ))}
         </View>
-        <Pressable onPress={onClose} hitSlop={10}>
-          <Text style={{ fontSize: 20 }}>✕</Text>
-        </Pressable>
+        <IconBtn icon="close" onPress={onClose} />
       </View>
 
-      <ScrollView ref={scroll} style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 10 }}>
-        {chat.length === 0 && <Text style={styles.hint}>Use ➰ Lasso to circle your work, then tap “Add to AI”. Or just ask a question.</Text>}
-        {chat.map((m) => (
-          <View key={m.id} style={[styles.msg, m.role === 'user' ? styles.userMsg : styles.aiMsg, m.error && styles.errMsg]}>
-            {m.chips?.map((c) => <ChipPreview key={c.id} chip={c} />)}
-            {!!m.text && <Text style={styles.msgText}>{m.text}</Text>}
-            {!!m.transcription && <Text style={[styles.msgText, styles.mono]}>{m.transcription}</Text>}
-            {m.role === 'assistant' && !m.error && (
-              <View style={styles.msgActions}>
-                <SmallBtn label="📌 Pin to page" onPress={() => pinNote(m.text)} />
-                {!!m.transcription && <SmallBtn label="⬇️ Insert text" onPress={() => insertText(m.transcription!)} />}
-              </View>
-            )}
+      <ScrollView ref={scroll} style={{ flex: 1 }} contentContainerStyle={{ padding: 16, gap: 14 }}>
+        {chat.length === 0 && (
+          <View style={styles.empty}>
+            <MaterialCommunityIcons name="lasso" size={28} color={C.faint} />
+            <Text style={styles.emptyText}>Lasso part of your page, then tap “Ask about this”.</Text>
           </View>
-        ))}
-        {busy && <ActivityIndicator style={{ marginTop: 8 }} />}
+        )}
+        {chat.map((m) =>
+          m.role === 'user' ? (
+            <View key={m.id} style={styles.userMsg}>
+              {m.chips?.map((c) => <ChipPreview key={c.id} chip={c} />)}
+              {!!m.text && <Text style={styles.msgText}>{m.text}</Text>}
+            </View>
+          ) : (
+            <View key={m.id} style={styles.aiMsg}>
+              <Text style={[styles.msgText, m.error && { color: C.danger }]}>{m.text}</Text>
+              {!!m.transcription && <Text style={styles.mono}>{m.transcription}</Text>}
+              {!m.error && (
+                <View style={styles.msgActions}>
+                  <Action icon="pin-outline" label="Pin to page" onPress={() => pinNote(m.text)} />
+                  {!!m.transcription && <Action icon="tray-arrow-down" label="Insert text" onPress={() => insertText(m.transcription!)} />}
+                </View>
+              )}
+            </View>
+          ),
+        )}
+        {busy && <ActivityIndicator color={C.muted} style={{ alignSelf: 'flex-start' }} />}
       </ScrollView>
 
-      {chips.length > 0 && (
-        <ScrollView horizontal style={styles.tray} contentContainerStyle={{ gap: 8, padding: 8 }}>
-          {chips.map((c) => (
-            <View key={c.id}>
-              <ChipPreview chip={c} small />
-              <Pressable style={styles.chipX} onPress={() => setChips(chips.filter((x) => x.id !== c.id))}>
-                <Text style={{ color: 'white', fontSize: 12 }}>✕</Text>
-              </Pressable>
-            </View>
-          ))}
-        </ScrollView>
-      )}
+      <View style={styles.composer}>
+        {chips.length > 0 && (
+          <ScrollView horizontal contentContainerStyle={{ gap: 8, paddingBottom: 10 }} style={{ flexGrow: 0 }}>
+            {chips.map((c) => (
+              <View key={c.id}>
+                <ChipPreview chip={c} small />
+                <Pressable style={styles.chipX} onPress={() => setChips(chips.filter((x) => x.id !== c.id))} hitSlop={6}>
+                  <MaterialCommunityIcons name="close" size={12} color={C.onPrimary} />
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
+        )}
 
-      <View style={styles.quick}>
-        {QUICK.map((q) => (
-          <SmallBtn key={q.mode} label={q.label} disabled={busy || !chips.length} onPress={() => send(q.mode, input || q.prompt)} />
-        ))}
-      </View>
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder={chips.length ? 'Ask about your selection…' : 'Ask anything…'}
-          multiline
-        />
-        <Pressable style={[styles.send, busy && { opacity: 0.4 }]} onPress={() => send('ask', input)} disabled={busy}>
-          <Text style={{ color: 'white', fontWeight: '600' }}>Send</Text>
-        </Pressable>
+        {chips.length > 0 && (
+          <View style={styles.quick}>
+            {QUICK.map((q) => (
+              <Pressable key={q.mode} disabled={busy} onPress={() => send(q.mode, input || q.prompt)} style={({ pressed }) => [styles.quickBtn, pressed && { backgroundColor: C.selected }, busy && { opacity: 0.4 }]}>
+                <MaterialCommunityIcons name={q.icon} size={15} color={C.icon} />
+                <Text style={styles.quickText}>{q.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.inputRow}>
+          <TextInput
+            style={styles.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder={chips.length ? 'Ask about your selection' : 'Ask anything'}
+            placeholderTextColor={C.muted}
+            multiline
+          />
+          <Pressable style={[styles.send, !canSend && { opacity: 0.25 }]} onPress={() => send('ask', input)} disabled={!canSend}>
+            <MaterialCommunityIcons name="arrow-up" size={18} color={C.onPrimary} />
+          </Pressable>
+        </View>
       </View>
     </View>
   );
 }
 
 function ChipPreview({ chip, small }: { chip: Chip; small?: boolean }) {
-  const h = small ? 64 : 120;
+  const h = small ? 56 : 110;
   return (
     <View style={styles.chip}>
       {chip.image && (
         <Image
           source={{ uri: `data:image/png;base64,${chip.image.base64}` }}
-          style={{ height: h, width: Math.min(small ? 140 : 280, (chip.image.width / chip.image.height) * h) }}
+          style={{ height: h, width: Math.min(small ? 120 : 260, (chip.image.width / chip.image.height) * h) }}
           resizeMode="contain"
         />
       )}
-      {!!chip.text && <Text numberOfLines={small ? 2 : 6} style={styles.chipText}>{chip.text}</Text>}
+      {!!chip.text && (
+        <Text numberOfLines={small ? 2 : 6} style={styles.chipText}>
+          {chip.text}
+        </Text>
+      )}
     </View>
   );
 }
 
-function SmallBtn({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {
+function Action({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} disabled={disabled} style={[styles.small, disabled && { opacity: 0.4 }]}>
-      <Text style={{ fontSize: 13 }}>{label}</Text>
+    <Pressable onPress={onPress} hitSlop={6} style={({ pressed }) => [styles.action, pressed && { opacity: 0.5 }]}>
+      <MaterialCommunityIcons name={icon} size={14} color={C.muted} />
+      <Text style={styles.actionText}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  panel: { width: 400, backgroundColor: '#FBFAF7', borderLeftWidth: StyleSheet.hairlineWidth, borderColor: '#D9D4C7' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 12 },
-  segment: { flexDirection: 'row', backgroundColor: '#ECE8DE', borderRadius: 8, padding: 2 },
+  panel: { width: 380, backgroundColor: C.surface, borderLeftWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, height: 52 },
+  segment: { flexDirection: 'row', backgroundColor: C.bg, borderRadius: R.sm, padding: 2 },
   segBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
-  segActive: { backgroundColor: '#6E56CF' },
-  segText: { fontWeight: '600', color: '#1F2328' },
-  hint: { color: '#6B665C', textAlign: 'center', marginTop: 24, paddingHorizontal: 16 },
-  msg: { borderRadius: 12, padding: 10, gap: 8, maxWidth: '95%' },
-  userMsg: { alignSelf: 'flex-end', backgroundColor: '#E9E3FF' },
-  aiMsg: { alignSelf: 'flex-start', backgroundColor: 'white', borderWidth: StyleSheet.hairlineWidth, borderColor: '#D9D4C7' },
-  errMsg: { backgroundColor: '#FFE5E5' },
-  msgText: { fontSize: 15, lineHeight: 21, color: '#1F2328' },
-  mono: { fontFamily: 'monospace', fontSize: 13, backgroundColor: '#F3F1EC', padding: 6, borderRadius: 6 },
-  msgActions: { flexDirection: 'row', gap: 6 },
-  tray: { maxHeight: 96, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#D9D4C7', flexGrow: 0 },
-  chip: { backgroundColor: 'white', borderRadius: 8, borderWidth: 1, borderColor: '#D9D4C7', overflow: 'hidden', alignSelf: 'flex-start' },
-  chipText: { fontSize: 12, padding: 6, maxWidth: 200 },
-  chipX: { position: 'absolute', top: -4, right: -4, backgroundColor: '#1F2328', borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
-  quick: { flexDirection: 'row', gap: 6, paddingHorizontal: 8, paddingTop: 8, flexWrap: 'wrap' },
-  small: { backgroundColor: '#ECE8DE', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
-  inputRow: { flexDirection: 'row', gap: 8, padding: 8, alignItems: 'flex-end' },
-  input: { flex: 1, minHeight: 40, maxHeight: 120, backgroundColor: 'white', borderRadius: 10, borderWidth: 1, borderColor: '#D9D4C7', paddingHorizontal: 10, paddingVertical: 8, fontSize: 15 },
-  send: { backgroundColor: '#6E56CF', borderRadius: 10, paddingHorizontal: 16, paddingVertical: 11 },
+  segActive: { backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  segText: { fontSize: 13, fontWeight: '600', color: C.muted },
+  empty: { alignItems: 'center', gap: 10, marginTop: 48, paddingHorizontal: 32 },
+  emptyText: { color: C.muted, textAlign: 'center', fontSize: 14, lineHeight: 20 },
+  userMsg: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: C.bg, borderRadius: R.lg, padding: 10, gap: 8 },
+  aiMsg: { alignSelf: 'stretch', gap: 8 },
+  msgText: { fontSize: 15, lineHeight: 22, color: C.text },
+  mono: { fontFamily: 'monospace', fontSize: 13, color: C.text, backgroundColor: C.bg, padding: 10, borderRadius: R.sm },
+  msgActions: { flexDirection: 'row', gap: 16 },
+  action: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  actionText: { fontSize: 13, color: C.muted },
+  chip: { backgroundColor: C.paper, borderRadius: R.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, overflow: 'hidden', alignSelf: 'flex-start' },
+  chipText: { fontSize: 12, padding: 6, maxWidth: 200, color: C.text },
+  chipX: { position: 'absolute', top: -6, right: -6, backgroundColor: C.text, borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
+  composer: { padding: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  quick: { flexDirection: 'row', gap: 6, marginBottom: 10, flexWrap: 'wrap' },
+  quickBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: StyleSheet.hairlineWidth, borderColor: C.faint, paddingHorizontal: 10, paddingVertical: 6, borderRadius: R.pill },
+  quickText: { fontSize: 13, color: C.text },
+  inputRow: { flexDirection: 'row', gap: 8, alignItems: 'flex-end', backgroundColor: C.bg, borderRadius: R.lg, padding: 6, paddingLeft: 12 },
+  input: { flex: 1, minHeight: 32, maxHeight: 120, paddingVertical: 6, fontSize: 15, color: C.text },
+  send: { width: 32, height: 32, borderRadius: 16, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
 });

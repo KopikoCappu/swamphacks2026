@@ -15,10 +15,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerStyle: { backgroundColor: '#F6F4EF' }, headerShadowVisible: false }}>
-        <Stack.Screen name="index" options={{ title: 'InkBuddy' }} />
-        <Stack.Screen name="note/[id]" options={{ title: '' }} />
-      </Stack>
+      <Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
     </GestureHandlerRootView>
   );
 }
