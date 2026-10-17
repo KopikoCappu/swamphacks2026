@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './env.js';
 import cors from 'cors';
 import express from 'express';
 import { existsSync } from 'node:fs';
@@ -33,6 +33,38 @@ app.post('/ask', async (req, res) => {
     console.error('[ask] failed', err);
     res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
   }
+});
+
+// Create an account that is confirmed up front (no confirmation email — Supabase's free tier only sends a
+// few per hour). Uses the service-role key, which never leaves the server. The app then signs in normally.
+app.post('/auth/signup', async (req, res) => {
+  const { email, password } = (req.body ?? {}) as { email?: unknown; password?: unknown };
+  if (typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email)) {
+    res.status(400).json({ error: 'Enter a valid email address.' });
+    return;
+  }
+  if (typeof password !== 'string' || password.length < 6) {
+    res.status(400).json({ error: 'Password must be at least 6 characters.' });
+    return;
+  }
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    res.status(500).json({ error: 'Accounts are not configured on the server.' });
+    return;
+  }
+  const r = await fetch(`${url}/auth/v1/admin/users`, {
+    method: 'POST',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: email.trim().toLowerCase(), password, email_confirm: true }),
+  });
+  if (!r.ok) {
+    const j = (await r.json().catch(() => ({}))) as { msg?: string; message?: string; error_code?: string };
+    const exists = r.status === 422 || j.error_code === 'email_exists';
+    res.status(exists ? 409 : 400).json({ error: exists ? 'An account with this email already exists — sign in instead.' : (j.msg ?? j.message ?? 'Sign-up failed.') });
+    return;
+  }
+  res.json({ ok: true });
 });
 
 // Serve the built web app (npm run build:web) so ONE ngrok URL gives the tablet both app + API.

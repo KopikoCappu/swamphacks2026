@@ -15,6 +15,12 @@ export const SIZE_OPTIONS: Record<SizedTool, number[]> = {
 
 const MAX_HISTORY = 100;
 
+/** Sync key for a note or folder. */
+export const syncKey = (kind: 'note' | 'folder', id: string) => `${kind}:${id}`;
+
+/** A row coming down from the cloud (see lib/sync.ts). `data` is absent for tombstones. */
+export type RemoteItem = { kind: 'note' | 'folder'; id: string; updated_at: number; deleted: boolean; data?: unknown };
+
 type State = {
   pages: Record<string, Page>;
   folders: Record<string, Folder>;
@@ -29,6 +35,11 @@ type State = {
   // in-memory undo/redo stacks per page (not persisted)
   undo: Record<string, Snapshot[]>;
   redo: Record<string, Snapshot[]>;
+  // --- cloud sync bookkeeping (persisted) ---
+  /** syncKey → updatedAt of the version the cloud has, so only newer local changes get uploaded */
+  synced: Record<string, number>;
+  /** syncKey → when it was deleted locally (uploaded as a tombstone) */
+  tombstones: Record<string, number>;
 
   createPage: (folderId?: string | null) => string;
   deletePage: (id: string) => void;
@@ -47,6 +58,11 @@ type State = {
   setSize: (tool: SizedTool, size: number) => void;
   setPenOnly: (v: boolean) => void;
   setShapeKind: (k: ShapeKind) => void;
+  /** Merge rows from the cloud (last write wins on updatedAt). */
+  applyRemote: (items: RemoteItem[]) => void;
+  markSynced: (entries: Record<string, number>) => void;
+  /** Sign-out: forget this account's notes on this device. */
+  resetData: () => void;
 };
 
 const snapshot = (p: Page): Snapshot => ({ strokes: p.strokes, texts: p.texts, maths: p.maths ?? [], images: p.images, annotations: p.annotations });
@@ -64,6 +80,8 @@ export const useStore = create<State>()(
       penOnly: false,
       undo: {},
       redo: {},
+      synced: {},
+      tombstones: {},
 
       createPage: (folderId = null) => {
         const id = uid();
@@ -79,20 +97,26 @@ export const useStore = create<State>()(
       deletePage: (id) =>
         set((s) => {
           const { [id]: _, ...rest } = s.pages;
-          return { pages: rest };
+          return { pages: rest, tombstones: { ...s.tombstones, [syncKey('note', id)]: Date.now() } };
         }),
-      movePage: (id, folderId) => set((s) => (s.pages[id] ? { pages: { ...s.pages, [id]: { ...s.pages[id], folderId } } } : s)),
+      movePage: (id, folderId) =>
+        set((s) => (s.pages[id] ? { pages: { ...s.pages, [id]: { ...s.pages[id], folderId, updatedAt: Date.now() } } } : s)),
       createFolder: (name = 'New folder') => {
         const id = uid();
-        set((s) => ({ folders: { ...s.folders, [id]: { id, name, createdAt: Date.now() } } }));
+        const now = Date.now();
+        set((s) => ({ folders: { ...s.folders, [id]: { id, name, createdAt: now, updatedAt: now } } }));
         return id;
       },
-      renameFolder: (id, name) => set((s) => (s.folders[id] ? { folders: { ...s.folders, [id]: { ...s.folders[id], name } } } : s)),
+      renameFolder: (id, name) =>
+        set((s) => (s.folders[id] ? { folders: { ...s.folders, [id]: { ...s.folders[id], name, updatedAt: Date.now() } } } : s)),
       deleteFolder: (id) =>
         set((s) => {
+          const now = Date.now();
           const { [id]: _, ...folders } = s.folders;
-          const pages = Object.fromEntries(Object.entries(s.pages).map(([k, p]) => [k, p.folderId === id ? { ...p, folderId: null } : p]));
-          return { folders, pages };
+          const pages = Object.fromEntries(
+            Object.entries(s.pages).map(([k, p]) => [k, p.folderId === id ? { ...p, folderId: null, updatedAt: now } : p]),
+          );
+          return { folders, pages, tombstones: { ...s.tombstones, [syncKey('folder', id)]: now } };
         }),
       updatePage: (id, fn, trackUndo) =>
         set((s) => {
@@ -134,10 +158,36 @@ export const useStore = create<State>()(
       setSize: (tool, size) => set((s) => ({ sizes: { ...s.sizes, [tool]: size } })),
       setPenOnly: (penOnly) => set({ penOnly }),
       setShapeKind: (shapeKind) => set({ shapeKind, tool: 'shape' }),
+
+      applyRemote: (items) =>
+        set((s) => {
+          const pages = { ...s.pages };
+          const folders = { ...s.folders };
+          const synced = { ...s.synced };
+          const tombstones = { ...s.tombstones };
+          for (const it of items) {
+            const k = syncKey(it.kind, it.id);
+            const local = it.kind === 'note' ? pages[it.id] : folders[it.id];
+            const localAt = local ? (local.updatedAt ?? local.createdAt) : (tombstones[k] ?? 0);
+            if (it.updated_at < localAt) continue; // local is newer — it will be uploaded
+            if (it.deleted) {
+              if (it.kind === 'note') delete pages[it.id];
+              else delete folders[it.id];
+            } else if (it.data) {
+              if (it.kind === 'note') pages[it.id] = { ...(it.data as Page), id: it.id, updatedAt: it.updated_at };
+              else folders[it.id] = { ...(it.data as Folder), id: it.id, updatedAt: it.updated_at };
+              delete tombstones[k];
+            }
+            synced[k] = it.updated_at;
+          }
+          return { pages, folders, synced, tombstones };
+        }),
+      markSynced: (entries) => set((s) => ({ synced: { ...s.synced, ...entries } })),
+      resetData: () => set({ pages: {}, folders: {}, synced: {}, tombstones: {}, undo: {}, redo: {} }),
     }),
     {
       name: 'inkbuddy',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => appStorage),
       partialize: ({ undo, redo, ...rest }) => rest,
       // v0 stored a single `penSize`; fold it into `sizes`.
@@ -146,6 +196,12 @@ export const useStore = create<State>()(
         if (version < 1) {
           s.sizes = { pen: s.penSize ?? 2.5, highlighter: 22, eraser: 16 };
           delete s.penSize;
+        }
+        // v2: sync bookkeeping; folders track updatedAt.
+        if (version < 2) {
+          s.synced = {};
+          s.tombstones = {};
+          for (const f of Object.values(s.folders ?? {})) f.updatedAt ??= f.createdAt;
         }
         return s as State;
       },

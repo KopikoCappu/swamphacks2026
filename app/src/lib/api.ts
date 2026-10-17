@@ -3,15 +3,12 @@ import type { ModelAnnotation } from './annotations';
 import type { RenderedImage } from './snapshot';
 import type { ChatMessage, Rect } from './types';
 
-// Where the server lives:
-// - Expo Go / native: set EXPO_PUBLIC_API_URL in app/.env to your ngrok URL
-// - Web served BY the server (npm run build:web): same origin, works through one ngrok URL
-// - Web dev server on :8081: the local server
+// Where the server lives: EXPO_PUBLIC_API_URL (app/.env, eas.json) — the hosted API on Vercel.
+// Without it: on web, the page's own origin (when the laptop server hosts the web build), else the local server.
 function resolveApiUrl() {
-  if (Platform.OS === 'web' && typeof window !== 'undefined') {
-    return window.location.port === '8081' ? 'http://localhost:8787' : window.location.origin;
-  }
-  return process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8787';
+  if (process.env.EXPO_PUBLIC_API_URL) return process.env.EXPO_PUBLIC_API_URL;
+  if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location.port !== '8081') return window.location.origin;
+  return 'http://localhost:8787';
 }
 export const API_URL = resolveApiUrl();
 

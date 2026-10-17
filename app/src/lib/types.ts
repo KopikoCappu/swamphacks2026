@@ -97,7 +97,7 @@ export type Page = {
   folderId?: string | null;
 };
 
-export type Folder = { id: string; name: string; createdAt: number };
+export type Folder = { id: string; name: string; createdAt: number; updatedAt?: number };
 
 export type Selection = {
   strokeIds: string[];

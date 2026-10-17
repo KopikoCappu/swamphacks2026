@@ -12,7 +12,9 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://inkbuddy-api.vercel.app",
-        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://aukfygqcrrfglmmjnqmq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6"
       }
     },
     "preview": {
@@ -22,14 +24,18 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://inkbuddy-api.vercel.app",
-        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://aukfygqcrrfglmmjnqmq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://inkbuddy-api.vercel.app",
-        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a"
+        "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://aukfygqcrrfglmmjnqmq.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6"
       }
     }
   }

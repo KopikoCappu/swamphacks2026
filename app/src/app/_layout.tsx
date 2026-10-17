@@ -3,8 +3,11 @@ import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { startSync } from '@/lib/sync';
 
 SplashScreen.preventAutoHideAsync();
+// Accounts + cloud sync (no-op when the build has no Supabase config).
+startSync();
 
 export default function RootLayout() {
   const [loaded] = useFonts({ Caveat_600SemiBold });

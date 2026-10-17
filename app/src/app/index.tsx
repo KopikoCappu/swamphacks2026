@@ -4,8 +4,11 @@ import { useEffect, useState, type ComponentProps } from 'react';
 import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NoteThumb } from '@/components/NoteThumb';
+import { SyncBadge } from '@/components/SyncBadge';
 import { IconBtn } from '@/components/Toolbar';
 import { useStore } from '@/lib/store';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/lib/sync';
 import { C, R, shadow } from '@/lib/theme';
 import type { Folder, Page } from '@/lib/types';
 
@@ -60,6 +63,7 @@ export default function NotesHome() {
             <Text style={[styles.sideText, { color: C.muted }]}>New folder</Text>
           </Pressable>
         </ScrollView>
+        <AccountRow />
       </View>
 
       <View style={styles.main} onLayout={(e) => setMainWidth(e.nativeEvent.layout.width)}>
@@ -95,6 +99,23 @@ export default function NotesHome() {
         )}
       </View>
     </SafeAreaView>
+  );
+}
+
+/** Bottom of the sidebar: who's signed in + sync state, or a prompt to sign in. */
+function AccountRow() {
+  const session = useAuth((s) => s.session);
+  if (!supabase) return null;
+  return (
+    <Pressable onPress={() => router.push('/account')} style={({ pressed }) => [styles.account, pressed && { backgroundColor: C.selected }]}>
+      <MaterialCommunityIcons name="account-circle-outline" size={22} color={C.icon} />
+      <View style={{ flex: 1 }}>
+        <Text style={styles.sideText} numberOfLines={1}>
+          {session ? session.user.email : 'Sign in to sync'}
+        </Text>
+        {session ? <SyncBadge /> : <Text style={styles.count}>Notes stay on this device</Text>}
+      </View>
+    </Pressable>
   );
 }
 
@@ -251,6 +272,7 @@ const styles = StyleSheet.create({
   renameInput: { paddingVertical: 4, borderBottomWidth: 1, borderColor: C.text },
   count: { fontSize: 12, color: C.muted, fontVariant: ['tabular-nums'] },
   smallIcon: { width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+  account: { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10, marginVertical: 12, borderRadius: R.md, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
 
   main: { flex: 1 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 32, paddingTop: 24, paddingBottom: 20, gap: 16 },
