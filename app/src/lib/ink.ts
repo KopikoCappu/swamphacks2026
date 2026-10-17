@@ -82,8 +82,17 @@ export function pointInPolygon(x: number, y: number, poly: Point[]): boolean {
   return inside;
 }
 
-// Rough text block height; TextBlock renders with this line height.
-export const TEXT_LINE_HEIGHT = 28;
+// Notebook ruling. Typed text uses the same line height so it sits on the lines.
+export const LINE_SPACING = 32;
+export const RULE_TOP = 64; // first ruled line
+export const MARGIN_X = 72; // red margin line on lined paper
+export const TEXT_LINE_HEIGHT = LINE_SPACING;
+
+/** Top of a text block whose first line sits on the ruled line nearest to y. */
+export function snapTextTop(y: number) {
+  const rule = RULE_TOP + Math.max(0, Math.round((y - RULE_TOP) / LINE_SPACING)) * LINE_SPACING;
+  return rule - LINE_SPACING + 4;
+}
 export const textBounds = (t: TextBlock): Rect => ({
   x: t.x,
   y: t.y,

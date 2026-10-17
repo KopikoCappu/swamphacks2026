@@ -1,10 +1,11 @@
-import { Canvas, DashPathEffect, Group, Image as SkiaImage, Path, Rect, Skia } from '@shopify/react-native-skia';
+import { Canvas, Circle, DashPathEffect, Group, Image as SkiaImage, Path, Rect, Skia } from '@shopify/react-native-skia';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 import { GestureDetector, PointerType, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { PaperBackground } from '@/components/PaperBackground';
 import { annotationPath } from '@/lib/annotations';
-import { buildPath, selectWithLasso, strokePath, strokesHitAt, TEXT_LINE_HEIGHT, uid } from '@/lib/ink';
+import { buildPath, selectWithLasso, snapTextTop, strokePath, strokesHitAt, TEXT_LINE_HEIGHT, uid } from '@/lib/ink';
 import { skImageFor } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import type { Annotation, Point, Selection, Stroke } from '@/lib/types';
@@ -15,18 +16,18 @@ type Props = {
   onSelectionChange: (s: Selection | null) => void;
 };
 
-const HIGHLIGHTER_SIZE = 22;
-const ERASER_RADIUS = 14;
-
 export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
   const page = useStore((s) => s.pages[pageId]);
   const tool = useStore((s) => s.tool);
   const color = useStore((s) => s.color);
-  const penSize = useStore((s) => s.penSize);
+  const highlighterColor = useStore((s) => s.highlighterColor);
+  const sizes = useStore((s) => s.sizes);
   const updatePage = useStore((s) => s.updatePage);
   const [live, setLive] = useState<Point[]>([]);
   const [liveStylus, setLiveStylus] = useState(false);
   const [editingText, setEditingText] = useState<string | null>(null);
+  const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
+  const [eraserAt, setEraserAt] = useState<{ x: number; y: number } | null>(null);
 
   // Gesture callbacks read from refs / getState() so they never see stale render values.
   const g = useRef({ active: false, stylus: false, erasedOnce: false, points: [] as Point[] });
@@ -63,16 +64,17 @@ export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
       const pts = g.current.points;
       g.current.points = [];
       setLive([]);
+      setEraserAt(null);
       if (!pts.length) return;
 
-      const { tool, color, penSize, pages } = useStore.getState();
+      const { tool, color, highlighterColor, sizes, pages } = useStore.getState();
       const page = pages[pageId];
       if (tool === 'pen' || tool === 'highlighter') {
         const stroke: Stroke = {
           id: uid(),
           tool,
-          color: tool === 'highlighter' ? '#FFD60A' : color,
-          size: tool === 'highlighter' ? HIGHLIGHTER_SIZE : penSize,
+          color: tool === 'highlighter' ? highlighterColor : color,
+          size: sizes[tool],
           points: pts,
           stylus: g.current.stylus,
         };
@@ -82,15 +84,18 @@ export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
       } else if (tool === 'text') {
         const [x, y] = pts[0];
         const id = uid();
-        updatePage(pageId, (p) => ({ texts: [...p.texts, { id, x, y: y - TEXT_LINE_HEIGHT / 2, width: 360, text: '' }] }), true);
+        // On ruled paper, snap typed text onto the nearest line.
+        const top = (page.paper ?? 'blank') === 'blank' ? y - TEXT_LINE_HEIGHT / 2 : snapTextTop(y);
+        updatePage(pageId, (p) => ({ texts: [...p.texts, { id, x, y: top, width: 360, text: '' }] }), true);
         setEditingText(id);
       }
     },
   });
 
   function erase(x: number, y: number) {
-    const strokes = useStore.getState().pages[pageId]?.strokes ?? [];
-    const hit = strokesHitAt(strokes, x, y, ERASER_RADIUS);
+    setEraserAt({ x, y });
+    const { pages, sizes } = useStore.getState();
+    const hit = strokesHitAt(pages[pageId]?.strokes ?? [], x, y, sizes.eraser);
     if (!hit.length) return;
     updatePage(pageId, (p) => ({ strokes: p.strokes.filter((s) => !hit.includes(s.id)) }), !g.current.erasedOnce);
     g.current.erasedOnce = true;
@@ -104,17 +109,19 @@ export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
       live.forEach(([x, y]) => p.lineTo(x, y));
       return p.detach();
     }
-    return buildPath(live, tool, tool === 'highlighter' ? HIGHLIGHTER_SIZE : penSize, liveStylus);
-  }, [live, liveStylus, tool, penSize]);
+    return buildPath(live, tool, sizes[tool], liveStylus);
+  }, [live, liveStylus, tool, sizes]);
 
   if (!page) return null;
   const selected = new Set(selection?.strokeIds);
 
   return (
-    <View style={styles.root}>
+    <View style={styles.root} onLayout={(e) => setCanvasSize(e.nativeEvent.layout)}>
       <GestureDetector gesture={pan}>
         <View style={StyleSheet.absoluteFill} collapsable={false}>
           <Canvas style={StyleSheet.absoluteFill}>
+            <PaperBackground paper={page.paper ?? 'blank'} width={canvasSize.width} height={canvasSize.height} />
+
             {page.images.map((im) => {
               const sk = skImageFor(im);
               return sk ? <SkiaImage key={im.id} image={sk} x={im.x} y={im.y} width={im.w} height={im.h} fit="contain" /> : null;
@@ -134,9 +141,13 @@ export function InkCanvas({ pageId, selection, onSelectionChange }: Props) {
               </Path>
             )}
             {livePath && tool === 'highlighter' && (
-              <Path path={livePath} color="#FFD60A" opacity={0.35} style="stroke" strokeWidth={HIGHLIGHTER_SIZE} strokeCap="round" strokeJoin="round" />
+              <Path path={livePath} color={highlighterColor} opacity={0.35} style="stroke" strokeWidth={sizes.highlighter} strokeCap="round" strokeJoin="round" />
             )}
             {livePath && tool === 'pen' && <Path path={livePath} color={color} />}
+
+            {eraserAt && tool === 'eraser' && (
+              <Circle cx={eraserAt.x} cy={eraserAt.y} r={sizes.eraser} color="#8B8578" style="stroke" strokeWidth={1.5} />
+            )}
 
             {selection && (
               <Rect x={selection.bounds.x - 12} y={selection.bounds.y - 12} width={selection.bounds.w + 24} height={selection.bounds.h + 24} color="#3E63DD" style="stroke" strokeWidth={1.5}>
@@ -225,7 +236,8 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: TEXT_LINE_HEIGHT,
     color: '#1F2328',
-    padding: 4,
+    paddingHorizontal: 4,
+    paddingVertical: 0,
   },
   textSelected: { backgroundColor: 'rgba(62,99,221,0.12)', borderRadius: 4 },
   note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold', fontSize: 26, lineHeight: 28 },

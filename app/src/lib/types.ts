@@ -4,6 +4,8 @@ export type Point = [x: number, y: number, pressure: number];
 
 export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'text';
 
+export type Paper = 'blank' | 'lined' | 'grid' | 'dots';
+
 export type Stroke = {
   id: string;
   tool: 'pen' | 'highlighter';
@@ -62,6 +64,7 @@ export type Page = {
   images: PageImage[];
   annotations: Annotation[];
   chat: ChatMessage[];
+  paper?: Paper;
 };
 
 export type Selection = {
