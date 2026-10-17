@@ -14,7 +14,8 @@
         "EXPO_PUBLIC_API_URL": "https://inkbuddy-api.vercel.app",
         "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a",
         "EXPO_PUBLIC_SUPABASE_URL": "https://aukfygqcrrfglmmjnqmq.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6",
+        "GRADLE_OPTS": "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dkotlin.daemon.jvm.options=-Xmx1536m"
       }
     },
     "preview": {
@@ -26,7 +27,8 @@
         "EXPO_PUBLIC_API_URL": "https://inkbuddy-api.vercel.app",
         "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a",
         "EXPO_PUBLIC_SUPABASE_URL": "https://aukfygqcrrfglmmjnqmq.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6",
+        "GRADLE_OPTS": "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dkotlin.daemon.jvm.options=-Xmx1536m"
       }
     },
     "production": {
@@ -35,7 +37,8 @@
         "EXPO_PUBLIC_API_URL": "https://inkbuddy-api.vercel.app",
         "ORG_GRADLE_PROJECT_reactNativeArchitectures": "arm64-v8a",
         "EXPO_PUBLIC_SUPABASE_URL": "https://aukfygqcrrfglmmjnqmq.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6"
+        "EXPO_PUBLIC_SUPABASE_KEY": "sb_publishable_FFLvmLFqc678HXu-sjtaYA_JdzLYmN6",
+        "GRADLE_OPTS": "-Dorg.gradle.workers.max=2 -Dorg.gradle.parallel=false -Dkotlin.daemon.jvm.options=-Xmx1536m"
       }
     }
   }
