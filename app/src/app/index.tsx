@@ -281,7 +281,7 @@ const styles = StyleSheet.create({
   newText: { color: C.onPrimary, fontWeight: '600', fontSize: 14 },
   empty: { color: C.muted, textAlign: 'center', marginTop: 80, fontSize: 15 },
 
-  card: { aspectRatio: 0.77, backgroundColor: C.paper, borderRadius: R.md, overflow: 'hidden' },
+  card: { aspectRatio: 816 / 1056, backgroundColor: C.paper, borderRadius: R.md, overflow: 'hidden' },
   cardMeta: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   title: { fontSize: 14, fontWeight: '600', color: C.text },
   meta: { fontSize: 12, color: C.muted, marginTop: 2 },

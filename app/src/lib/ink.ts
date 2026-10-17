@@ -86,11 +86,6 @@ export function pointInPolygon(x: number, y: number, poly: Point[]): boolean {
 export const LINE_SPACING = 32;
 export const TEXT_LINE_HEIGHT = LINE_SPACING;
 
-/** Top of a text block whose first line sits on the ruled line nearest to y. */
-export function snapTextTop(y: number) {
-  const rule = Math.round(y / LINE_SPACING) * LINE_SPACING; // the canvas is infinite, so lines are too
-  return rule - LINE_SPACING + 4;
-}
 export const TEXT_SIZE = 18;
 export const textLineHeight = (t: TextBlock) => ((t.size ?? TEXT_SIZE) / TEXT_SIZE) * TEXT_LINE_HEIGHT;
 export const textBounds = (t: TextBlock): Rect => ({

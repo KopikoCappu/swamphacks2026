@@ -1,10 +1,10 @@
 import { Canvas, Circle, DashPathEffect, Group, Image as SkiaImage, Path, Rect, Skia } from '@shopify/react-native-skia';
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
-import { Platform, StyleSheet, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { GestureDetector, PointerType, usePanGesture, usePinchGesture, useSimultaneousGestures } from 'react-native-gesture-handler';
 import Animated, { FadeIn, useAnimatedStyle, useDerivedValue, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { MathView } from '@/components/MathView';
-import { isDark, PaperBackground } from '@/components/PaperBackground';
+import { deskColor, isDark, PaperBackground } from '@/components/PaperBackground';
 import { annotationPath } from '@/lib/annotations';
 import {
   buildPath,
@@ -18,7 +18,6 @@ import {
   rectContains,
   selectWithLasso,
   shapePoints,
-  snapTextTop,
   strokePath,
   strokesHitAt,
   TEXT_LINE_HEIGHT,
@@ -33,6 +32,7 @@ import { skImageFor } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
 import type { Annotation, Page, Point, Rect as PageRect, Selection, Stroke } from '@/lib/types';
+import { clampViewport, docHeight, DESK_PAD, fitToWidth, PAGE_W, pageCountFor, pageTop, snapToRule } from '@/lib/pages';
 import { clampZoom, toPage, zoomAt, type Viewport } from '@/lib/viewport';
 
 type Props = {
@@ -64,6 +64,13 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
   const [eraserAt, setEraserAt] = useState<{ x: number; y: number } | null>(null);
   /** live preview of a move/resize, committed to the page on release */
   const [xf, setXf] = useState<Transform | null>(null);
+  const pageCount = page ? pageCountFor(page) : 1;
+  // Read by gesture/wheel callbacks (which must not capture stale render values).
+  const docRef = useRef({ w: 0, h: 0, pages: 1, fitted: false });
+  useEffect(() => {
+    docRef.current.pages = pageCount;
+  }, [pageCount]);
+  const keepOnPage = () => clampViewport(viewport, docRef.current.w, docRef.current.h, docRef.current.pages);
   const rootRef = useRef<ComponentRef<typeof View>>(null);
 
   // Gesture callbacks read from refs / getState() so they never see stale render values.
@@ -162,6 +169,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
       if (m === 'pan') {
         viewport.tx.set(g.current.pan.tx + e.x - g.current.pan.x);
         viewport.ty.set(g.current.pan.ty + e.y - g.current.pan.y);
+        keepOnPage();
         return;
       }
       const [px, py] = toPage(viewport, e.x, e.y);
@@ -223,7 +231,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
         const [x, y] = pts[0];
         const id = uid();
         // On ruled paper, snap typed text onto the nearest line.
-        const top = (page.paper ?? 'blank') === 'blank' ? y - TEXT_LINE_HEIGHT / 2 : snapTextTop(y);
+        const top = (page.paper ?? 'blank') === 'blank' ? y - TEXT_LINE_HEIGHT / 2 : snapToRule(y, TEXT_LINE_HEIGHT);
         updatePage(pageId, (p) => ({ texts: [...p.texts, { id, x, y: top, width: 360, text: '' }] }), true);
         setEditingText(id);
       }
@@ -245,6 +253,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
       viewport.scale.set(s);
       viewport.tx.set(e.focalX - px * s);
       viewport.ty.set(e.focalY - py * s);
+      keepOnPage();
     },
     onFinalize: () => {
       pinch0.current.active = false;
@@ -266,6 +275,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
         viewport.tx.set(viewport.tx.get() - e.deltaX);
         viewport.ty.set(viewport.ty.get() - e.deltaY);
       }
+      clampViewport(viewport, docRef.current.w, docRef.current.h, docRef.current.pages);
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
@@ -329,12 +339,26 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
   const tFor = (ids: string[] | undefined, id: string) => (xf && ids?.includes(id) ? xf : IDENTITY);
 
   return (
-    <View ref={rootRef} style={[styles.root, { backgroundColor: bg }]} onLayout={(e) => setCanvasSize(e.nativeEvent.layout)}>
+    <View
+      ref={rootRef}
+      style={[styles.root, { backgroundColor: deskColor(bg) }]}
+      onLayout={(e) => {
+        const { width, height } = e.nativeEvent.layout;
+        setCanvasSize({ width, height });
+        docRef.current.w = width;
+        docRef.current.h = height;
+        // Open fitted to the page width, at the top of page 1.
+        if (!docRef.current.fitted && width > 0) {
+          docRef.current.fitted = true;
+          fitToWidth(viewport, width);
+        } else clampViewport(viewport, width, height, docRef.current.pages);
+      }}
+    >
       <GestureDetector gesture={gesture}>
         <View style={StyleSheet.absoluteFill} collapsable={false}>
           <Canvas style={StyleSheet.absoluteFill}>
             <Group transform={transform}>
-              <PaperBackground paper={page.paper ?? 'blank'} bg={bg} width={canvasSize.width} height={canvasSize.height} viewport={viewport} />
+              <PaperBackground paper={page.paper ?? 'blank'} bg={bg} pageCount={pageCount} width={canvasSize.width} height={canvasSize.height} viewport={viewport} />
 
               {page.images
                 .filter((im) => !selImages.has(im.id))
@@ -455,6 +479,21 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
         ))}
       </Animated.View>
 
+      {/* "+ Add page" under the last page (only the button takes touches) */}
+      <Animated.View style={[styles.layer, overlayStyle]} pointerEvents="box-none">
+        <Pressable
+          onPress={() => {
+            updatePage(pageId, (p) => ({ pageCount: pageCountFor(p) + 1 }), true);
+            // Scroll so the new page's top is in view.
+            viewport.ty.set(DESK_PAD * 4 - pageTop(pageCount) * viewport.scale.get());
+            clampViewport(viewport, docRef.current.w, docRef.current.h, pageCount + 1);
+          }}
+          style={({ pressed }) => [styles.addPage, { left: PAGE_W / 2 - 70, top: docHeight(pageCount) + 14 }, pressed && { opacity: 0.6 }]}
+        >
+          <Text style={[styles.addPageText, isDark(bg) && { color: '#DDD' }]}>＋ Add page</Text>
+        </Pressable>
+      </Animated.View>
+
       {/* AI margin notes in handwriting font */}
       <Animated.View style={[styles.layer, overlayStyle]} pointerEvents="none">
         {page.annotations
@@ -557,4 +596,6 @@ const styles = StyleSheet.create({
   textSelected: { backgroundColor: 'rgba(47,111,235,0.10)', borderRadius: 4 },
   note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold' },
   math: { position: 'absolute', paddingHorizontal: 4, borderRadius: 4 },
+  addPage: { position: 'absolute', width: 140, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(0,0,0,0.15)', borderStyle: 'dashed' },
+  addPageText: { fontSize: 14, fontWeight: '600', color: C.muted },
 });

@@ -8,7 +8,8 @@ import { PAGE_COLORS } from '@/components/PaperBackground';
 import { SIZE_OPTIONS, useStore } from '@/lib/store';
 import { C, R, shadow } from '@/lib/theme';
 import type { Paper, ShapeKind, Tool } from '@/lib/types';
-import { resetViewport, zoomAt, type Viewport } from '@/lib/viewport';
+import { pageAtCenter } from '@/lib/pages';
+import { zoomAt, type Viewport } from '@/lib/viewport';
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>['name'];
 export type Menu = 'color' | 'more' | null;
@@ -224,20 +225,43 @@ export function MoreMenu({ pageId, onAddImage }: { pageId: string; onAddImage: (
 
 // ---------------------------------------------------------------- zoom pill
 
-export function ZoomPill({ viewport, getCenter }: { viewport: Viewport; getCenter: () => [number, number] }) {
+type ZoomPillProps = {
+  viewport: Viewport;
+  getCenter: () => [number, number];
+  /** Fit the page width and jump back to the top of page 1. */
+  onReset: () => void;
+  pageCount: number;
+  viewHeight: number;
+};
+
+export function ZoomPill({ viewport, getCenter, onReset, pageCount, viewHeight }: ZoomPillProps) {
   const [pct, setPct] = useState(100);
+  const [pageNo, setPageNo] = useState(1);
   useAnimatedReaction(
     () => Math.round(viewport.scale.get() * 100),
     (v, prev) => {
       if (v !== prev) scheduleOnRN(setPct, v);
     },
   );
+  useAnimatedReaction(
+    () => pageAtCenter(viewport.ty.get(), viewport.scale.get(), viewHeight, pageCount) + 1,
+    (v, prev) => {
+      if (v !== prev) scheduleOnRN(setPageNo, v);
+    },
+    [viewHeight, pageCount],
+  );
   const step = (f: number) => zoomAt(viewport, viewport.scale.get() * f, ...getCenter());
 
   return (
     <View style={[styles.zoom, shadow]}>
+      <Pressable onPress={onReset} hitSlop={4} style={styles.pageNo}>
+        <Text style={styles.zoomText}>
+          Page {Math.min(pageNo, pageCount)} / {pageCount}
+        </Text>
+      </Pressable>
+      <View style={styles.zoomDivider} />
       <IconBtn icon="minus" onPress={() => step(1 / 1.25)} size={18} />
-      <Pressable onPress={() => resetViewport(viewport)} hitSlop={4}>
+      <Pressable onPress={onReset} hitSlop={4}>
         <Text style={styles.zoomText}>{pct}%</Text>
       </Pressable>
       <IconBtn icon="plus" onPress={() => step(1.25)} size={18} />
@@ -315,5 +339,7 @@ const styles = StyleSheet.create({
   knob: { width: 16, height: 16, borderRadius: 8, backgroundColor: C.surface },
   pageSwatch: { width: 22, height: 22, borderRadius: 6, borderWidth: StyleSheet.hairlineWidth, borderColor: 'rgba(0,0,0,0.2)' },
   zoom: { position: 'absolute', bottom: 16, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: C.surface, borderRadius: R.pill, paddingHorizontal: 2, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
+  pageNo: { paddingHorizontal: 10 },
+  zoomDivider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: C.border },
   zoomText: { fontSize: 13, fontWeight: '600', color: C.text, minWidth: 48, textAlign: 'center', fontVariant: ['tabular-nums'] },
 });

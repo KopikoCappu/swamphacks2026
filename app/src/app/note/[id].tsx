@@ -12,7 +12,8 @@ import { prepareImage, renderSelection } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
 import type { Chip, Include, Selection, Tool } from '@/lib/types';
-import { resetViewport, useViewport, zoomAt } from '@/lib/viewport';
+import { fitToWidth, pageCountFor } from '@/lib/pages';
+import { useViewport, zoomAt } from '@/lib/viewport';
 
 const ALL: Include = { ink: true, images: true, text: true };
 const idsKey = (s: Selection | null) => (s ? [s.strokeIds, s.textIds, s.mathIds, s.imageIds, s.annotationIds ?? []].map((a) => a.join(',')).join('|') : '');
@@ -36,6 +37,7 @@ export default function NoteScreen() {
   const [menu, setMenu] = useState<Menu>(null);
   const viewport = useViewport();
   const canvasSize = useRef({ width: 0, height: 0 });
+  const [viewHeight, setViewHeight] = useState(0);
   const center = (): [number, number] => [canvasSize.current.width / 2, canvasSize.current.height / 2];
   // Page-space rect currently on screen (sent to Claude as the "page view").
   const visibleRect = () => {
@@ -65,7 +67,7 @@ export default function NoteScreen() {
         zoomAt(viewport, viewport.scale.get() * (key === '-' ? 1 / 1.25 : 1.25), ...center());
       } else if (mod && key === '0') {
         e.preventDefault();
-        resetViewport(viewport);
+        fitToWidth(viewport, canvasSize.current.width);
       } else if (!mod && TOOL_KEYS[key]) {
         setTool(TOOL_KEYS[key]);
       } else if (key === 'escape') {
@@ -120,10 +122,19 @@ export default function NoteScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <TopBar pageId={id} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} menu={menu} setMenu={setMenu} />
       <View style={styles.body}>
-        <View style={{ flex: 1 }} onLayout={(e) => (canvasSize.current = e.nativeEvent.layout)}>
+        <View style={{ flex: 1 }} onLayout={(e) => {
+            canvasSize.current = e.nativeEvent.layout;
+            setViewHeight(e.nativeEvent.layout.height);
+          }}>
           <InkCanvas pageId={id} selection={selection} onSelectionChange={setSelection} viewport={viewport} onTransformingChange={setTransforming} />
           <SideControls pageId={id} />
-          <ZoomPill viewport={viewport} getCenter={center} />
+          <ZoomPill
+            viewport={viewport}
+            getCenter={center}
+            onReset={() => fitToWidth(viewport, canvasSize.current.width)}
+            pageCount={pageCountFor(page)}
+            viewHeight={viewHeight}
+          />
           {selection && !transforming && (
             <SelectionBar
               pageId={id}

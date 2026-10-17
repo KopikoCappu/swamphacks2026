@@ -1,33 +1,26 @@
-import { Canvas, Group, Path, type Transforms3d } from '@shopify/react-native-skia';
+import { Canvas, Group, Path } from '@shopify/react-native-skia';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { strokeBounds, strokePath, unionRects } from '@/lib/ink';
+import { strokePath } from '@/lib/ink';
+import { PAGE_H, PAGE_W } from '@/lib/pages';
 import type { Page } from '@/lib/types';
 
-const PAD = 14;
-
-/** Small live preview of a page's ink for the notes grid. */
+/** Page 1 of a note, scaled down to the card (cards share the Letter page's aspect ratio). */
 export function NoteThumb({ page }: { page: Page }) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const bounds = unionRects(page.strokes.map(strokeBounds));
-
-  let transform: Transforms3d = [];
-  if (bounds && size.width) {
-    // Fit the ink, but never blow up a tiny doodle past ~half size.
-    const s = Math.min((size.width - PAD * 2) / Math.max(bounds.w, 1), (size.height - PAD * 2) / Math.max(bounds.h, 1), 0.5);
-    transform = [{ translateX: PAD - bounds.x * s }, { translateY: PAD - bounds.y * s }, { scale: s }];
-  }
+  const [width, setWidth] = useState(0);
+  const s = width / PAGE_W;
+  const firstPage = page.strokes.filter((st) => st.points.some(([, y]) => y < PAGE_H));
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: page.bg ?? '#FFFFFF' }]} onLayout={(e) => setSize(e.nativeEvent.layout)}>
-      {bounds && size.width > 0 && (
+    <View style={[StyleSheet.absoluteFill, { backgroundColor: page.bg ?? '#FFFFFF' }]} onLayout={(e) => setWidth(e.nativeEvent.layout.width)}>
+      {width > 0 && firstPage.length > 0 && (
         <Canvas style={StyleSheet.absoluteFill}>
-          <Group transform={transform}>
-            {page.strokes.map((s) =>
-              s.tool === 'pen' ? (
-                <Path key={s.id} path={strokePath(s)} color={s.color} />
+          <Group transform={[{ scale: s }]}>
+            {firstPage.map((st) =>
+              st.tool === 'pen' ? (
+                <Path key={st.id} path={strokePath(st)} color={st.color} />
               ) : (
-                <Path key={s.id} path={strokePath(s)} color={s.color} opacity={s.tool === 'highlighter' ? 0.35 : 1} style="stroke" strokeWidth={s.size} strokeCap="round" strokeJoin="round" />
+                <Path key={st.id} path={strokePath(st)} color={st.color} opacity={st.tool === 'highlighter' ? 0.35 : 1} style="stroke" strokeWidth={st.size} strokeCap="round" strokeJoin="round" />
               ),
             )}
           </Group>

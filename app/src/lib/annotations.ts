@@ -1,5 +1,6 @@
 import { Skia, type SkPath } from '@shopify/react-native-skia';
 import { annotationBounds, mathBounds, strokeBounds, textBounds, uid } from './ink';
+import { PAGE_W } from './pages';
 import type { Annotation, AnnotationKind, MathBlock, Page, Rect, TextBlock } from './types';
 
 export const AI_COLORS: Record<string, string> = {
@@ -25,6 +26,7 @@ export type ModelAnnotation = {
 export type PageAdditions = { annotations: Annotation[]; texts: TextBlock[]; maths: MathBlock[] };
 
 const GAP = 16;
+const PAGE_MARGIN = 24;
 const overlap = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 
 /** Rough size of a piece of AI writing before it renders (real sizes are measured afterwards). */
@@ -56,8 +58,10 @@ function makeFlow(anchor: Rect, page: Page) {
     anchor,
   ];
   const cursor = { right: anchor.y, below: anchor.y + anchor.h + GAP };
-  return (side: 'right' | 'below', w: number, h: number): Rect => {
-    const x = side === 'right' ? anchor.x + anchor.w + GAP * 2 : anchor.x;
+  return (wanted: 'right' | 'below', w: number, h: number): Rect => {
+    // No room beside the selection on the page → stack it below instead.
+    const side = wanted === 'right' && anchor.x + anchor.w + GAP * 2 + w > PAGE_W - PAGE_MARGIN ? 'below' : wanted;
+    const x = side === 'right' ? anchor.x + anchor.w + GAP * 2 : Math.max(PAGE_MARGIN, Math.min(anchor.x, PAGE_W - PAGE_MARGIN - w));
     let y = cursor[side];
     for (let tries = 0; tries < 400; tries++, y += 8) {
       const r = { x, y, w, h };

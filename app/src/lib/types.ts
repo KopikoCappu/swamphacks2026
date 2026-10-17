@@ -95,6 +95,8 @@ export type Page = {
   /** page background color */
   bg?: string;
   folderId?: string | null;
+  /** number of stacked Letter pages (grows with "Add page" or content); default 1 */
+  pageCount?: number;
 };
 
 export type Folder = { id: string; name: string; createdAt: number; updatedAt?: number };
