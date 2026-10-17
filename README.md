@@ -72,6 +72,11 @@ Contract lives in `server/src/schema.ts` ↔ `app/src/lib/api.ts` + `app/src/lib
 - Per-page chat memory → "what did I struggle with this week?"
 - Export page + AI ink as PDF
 
+## ⚠️ Before going public
+The AI endpoint is intentionally **open** for the demo — anyone with the URL can spend our Claude credits.
+See **[docs/COSTS_AND_SCALING.md](docs/COSTS_AND_SCALING.md)** for the fix list (auth on `/ask`, per-user quotas,
+Anthropic spend cap), full hosting cost breakdown, and bring-your-own-key options.
+
 ## Known TODOs / gotchas
 - Infinite canvas: pinch to zoom/pan (2 fingers), 1 finger scrolls in Pen-only mode; web: wheel = pan, Ctrl+wheel = zoom
 - Gemini is wired on the server but hidden in the app (`provider` in `AgentPanel.tsx`)
