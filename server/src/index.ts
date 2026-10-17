@@ -8,7 +8,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '25mb' })); // base64 page renders are big
 
-app.get('/health', (_req, res) => {
+app.get(['/', '/health'], (_req, res) => {
   res.json({
     ok: true,
     claude: Boolean(process.env.ANTHROPIC_API_KEY),
