@@ -1,8 +1,19 @@
 import type { ModelAnnotation } from './annotations';
 import type { ChatMessage } from './types';
 
-// Set EXPO_PUBLIC_API_URL in app/.env to your ngrok URL (e.g. https://abc123.ngrok-free.app)
-export const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8787';
+import { Platform } from 'react-native';
+
+// Where the server lives:
+// - Expo Go / native: set EXPO_PUBLIC_API_URL in app/.env to your ngrok URL
+// - Web served BY the server (npm run build:web): same origin, works through one ngrok URL
+// - Web dev server on :8081: the local server
+function resolveApiUrl() {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return window.location.port === '8081' ? 'http://localhost:8787' : window.location.origin;
+  }
+  return process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8787';
+}
+export const API_URL = resolveApiUrl();
 
 export type Provider = 'claude' | 'gemini';
 export type Mode = 'ask' | 'mistake' | 'explain' | 'transcribe';

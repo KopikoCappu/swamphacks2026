@@ -23,7 +23,16 @@ npm run dev                 # http://localhost:8787
 ngrok http 8787             # copy the https URL
 ```
 
-**2. App** (the Galaxy Tab)
+**2a. App on the tablet via web (easiest, one ngrok URL)**
+```bash
+cd server
+npm run build:web           # builds app/dist; the server then hosts it
+npm run dev                 # restart after each build:web
+ngrok http 8787             # open the https URL in Chrome on the tablet
+```
+Laptop dev: `cd app && npx expo start --web` → http://localhost:8081 (talks to localhost:8787 automatically).
+
+**2b. App on the tablet via Expo Go** (needs Expo Go for SDK 58)
 ```bash
 cd app
 echo EXPO_PUBLIC_API_URL=https://YOUR-ID.ngrok-free.app > .env
