@@ -73,7 +73,8 @@ Contract lives in `server/src/schema.ts` ↔ `app/src/lib/api.ts` + `app/src/lib
 - Export page + AI ink as PDF
 
 ## Known TODOs / gotchas
-- Fixed-size page (no zoom/scroll yet) — coordinates are page == view
+- Infinite canvas: pinch to zoom/pan (2 fingers), 1 finger scrolls in Pen-only mode; web: wheel = pan, Ctrl+wheel = zoom
+- Gemini is wired on the server but hidden in the app (`provider` in `AgentPanel.tsx`)
 - Chat replies render as plain text (Markdown/LaTeX not rendered yet)
 - Pages persist to AsyncStorage including images as base64 — fine for a demo, move to `expo-file-system` if it gets slow
 - Vision models' coordinates are good but not perfect; Gemini tends to be more precise for boxes — compare both

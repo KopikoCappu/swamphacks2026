@@ -4,9 +4,13 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useEffect, useState, type ComponentProps } from "react";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useAnimatedReaction } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
+import { PAGE_COLORS } from "@/components/PaperBackground";
 import { SIZE_OPTIONS, useStore } from "@/lib/store";
 import { C, R, shadow } from "@/lib/theme";
-import type { Paper, Tool } from "@/lib/types";
+import type { Paper, ShapeKind, Tool } from "@/lib/types";
+import { resetViewport, zoomAt, type Viewport } from "@/lib/viewport";
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 export type Menu = "color" | "more" | null;
@@ -14,6 +18,7 @@ export type Menu = "color" | "more" | null;
 const TOOLS: { id: Tool; icon: IconName }[] = [
 	{ id: "pen", icon: "pencil-outline" },
 	{ id: "highlighter", icon: "marker" },
+	{ id: "shape", icon: "shape-outline" },
 	{ id: "eraser", icon: "eraser" },
 	{ id: "lasso", icon: "lasso" },
 	{ id: "text", icon: "format-text" },
@@ -21,12 +26,19 @@ const TOOLS: { id: Tool; icon: IconName }[] = [
 const PEN_COLORS = [
 	"#1C1C1E",
 	"#636366",
+	"#FFFFFF",
 	"#2F6FEB",
 	"#E5484D",
 	"#30A46C",
 	"#8E4EC6",
 	"#F76B15",
 	"#0E9F9F",
+];
+const SHAPES: { id: ShapeKind; icon: IconName }[] = [
+	{ id: "line", icon: "vector-line" },
+	{ id: "arrow", icon: "arrow-top-right" },
+	{ id: "rect", icon: "rectangle-outline" },
+	{ id: "ellipse", icon: "ellipse-outline" },
 ];
 const HIGHLIGHTER_COLORS = [
 	"#FFD60A",
@@ -127,12 +139,31 @@ export function SideControls({ pageId }: { pageId: string }) {
 	);
 	const canUndo = useStore((s) => (s.undo[pageId]?.length ?? 0) > 0);
 	const canRedo = useStore((s) => (s.redo[pageId]?.length ?? 0) > 0);
-	const { setSize, undoPage, redoPage } = useStore.getState();
+	const shapeKind = useStore((s) => s.shapeKind);
+	const { setSize, undoPage, redoPage, setShapeKind } = useStore.getState();
+	// Shapes share the pen's width.
 	const sized =
-		tool === "pen" || tool === "highlighter" || tool === "eraser" ? tool : null;
+		tool === "pen" || tool === "shape"
+			? "pen"
+			: tool === "highlighter" || tool === "eraser"
+				? tool
+				: null;
 
 	return (
 		<View style={styles.rail} pointerEvents="box-none">
+			{tool === "shape" && (
+				<View style={[styles.railCard, shadow]}>
+					{SHAPES.map((sh) => (
+						<IconBtn
+							key={sh.id}
+							icon={sh.icon}
+							active={shapeKind === sh.id}
+							onPress={() => setShapeKind(sh.id)}
+							size={20}
+						/>
+					))}
+				</View>
+			)}
 			{sized && (
 				<View style={[styles.railCard, shadow]}>
 					{[...SIZE_OPTIONS[sized]].reverse().map((size) => {
@@ -219,9 +250,13 @@ export function MoreMenu({
 	onAddImage: (s: "camera" | "library") => void;
 }) {
 	const paper = useStore((s) => s.pages[pageId]?.paper ?? "blank");
+	const bg = useStore((s) => s.pages[pageId]?.bg ?? "#FFFFFF");
 	const penOnly = useStore((s) => s.penOnly);
 	const hasAiInk = useStore(
 		(s) => (s.pages[pageId]?.annotations.length ?? 0) > 0,
+	);
+	const lockedCount = useStore(
+		(s) => s.pages[pageId]?.images.filter((i) => i.locked).length ?? 0,
 	);
 	const { updatePage, setPenOnly } = useStore.getState();
 	const [confirmClear, setConfirmClear] = useState(false);
@@ -244,7 +279,7 @@ export function MoreMenu({
 	}
 
 	return (
-		<View style={[styles.popover, shadow, { right: 76, width: 280 }]}>
+		<View style={[styles.popover, shadow, { right: 76, width: 300 }]}>
 			<Text style={styles.popLabel}>Paper</Text>
 			<View style={styles.paperRow}>
 				{PAPERS.map((p) => (
@@ -262,6 +297,22 @@ export function MoreMenu({
 							style={[styles.paperText, paper === p.id && { color: C.text }]}
 						>
 							{p.label}
+						</Text>
+					</Pressable>
+				))}
+			</View>
+
+			<Text style={[styles.popLabel, { marginTop: 12 }]}>Page color</Text>
+			<View style={styles.paperRow}>
+				{PAGE_COLORS.map((c) => (
+					<Pressable
+						key={c.id}
+						onPress={() => updatePage(pageId, () => ({ bg: c.id }))}
+						style={[styles.paperBtn, bg === c.id && styles.paperActive]}
+					>
+						<View style={[styles.pageSwatch, { backgroundColor: c.id }]} />
+						<Text style={[styles.paperText, bg === c.id && { color: C.text }]}>
+							{c.label}
 						</Text>
 					</Pressable>
 				))}
@@ -285,6 +336,22 @@ export function MoreMenu({
 				right={<Toggle on={penOnly} />}
 			/>
 
+			{lockedCount > 0 && (
+				<Row
+					icon="lock-open-variant-outline"
+					label={`Unlock background image${lockedCount > 1 ? "s" : ""} (${lockedCount})`}
+					onPress={() =>
+						updatePage(
+							pageId,
+							(p) => ({
+								images: p.images.map((i) => ({ ...i, locked: false })),
+							}),
+							true,
+						)
+					}
+				/>
+			)}
+
 			<View style={styles.sep} />
 			{hasAiInk && (
 				<Row
@@ -299,6 +366,36 @@ export function MoreMenu({
 				danger
 				onPress={clearPage}
 			/>
+		</View>
+	);
+}
+
+// ---------------------------------------------------------------- zoom pill
+
+export function ZoomPill({
+	viewport,
+	getCenter,
+}: {
+	viewport: Viewport;
+	getCenter: () => [number, number];
+}) {
+	const [pct, setPct] = useState(100);
+	useAnimatedReaction(
+		() => Math.round(viewport.scale.get() * 100),
+		(v, prev) => {
+			if (v !== prev) scheduleOnRN(setPct, v);
+		},
+	);
+	const step = (f: number) =>
+		zoomAt(viewport, viewport.scale.get() * f, ...getCenter());
+
+	return (
+		<View style={[styles.zoom, shadow]}>
+			<IconBtn icon="minus" onPress={() => step(1 / 1.25)} size={18} />
+			<Pressable onPress={() => resetViewport(viewport)} hitSlop={4}>
+				<Text style={styles.zoomText}>{pct}%</Text>
+			</Pressable>
+			<IconBtn icon="plus" onPress={() => step(1.25)} size={18} />
 		</View>
 	);
 }
@@ -525,4 +622,31 @@ const styles = StyleSheet.create({
 		padding: 2,
 	},
 	knob: { width: 16, height: 16, borderRadius: 8, backgroundColor: C.surface },
+	pageSwatch: {
+		width: 22,
+		height: 22,
+		borderRadius: 6,
+		borderWidth: StyleSheet.hairlineWidth,
+		borderColor: "rgba(0,0,0,0.2)",
+	},
+	zoom: {
+		position: "absolute",
+		bottom: 16,
+		alignSelf: "center",
+		flexDirection: "row",
+		alignItems: "center",
+		backgroundColor: C.surface,
+		borderRadius: R.pill,
+		paddingHorizontal: 2,
+		borderWidth: StyleSheet.hairlineWidth,
+		borderColor: C.border,
+	},
+	zoomText: {
+		fontSize: 13,
+		fontWeight: "600",
+		color: C.text,
+		minWidth: 48,
+		textAlign: "center",
+		fontVariant: ["tabular-nums"],
+	},
 });

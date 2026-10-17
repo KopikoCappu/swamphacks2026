@@ -18,12 +18,14 @@ import {
 	View,
 } from "react-native";
 import { IconBtn } from "@/components/Toolbar";
-import { ask, type Mode, type Provider } from "@/lib/api";
-import { AI_COLORS, toPageAnnotations } from "@/lib/annotations";
+import { RichText } from "@/components/RichText";
+import { ask, buildRequest, type Mode, type Provider } from "@/lib/api";
+import { AI_COLORS, applyModelOutput } from "@/lib/annotations";
 import { uid } from "@/lib/ink";
+import { renderPageView } from "@/lib/snapshot";
 import { useStore } from "@/lib/store";
 import { C, R } from "@/lib/theme";
-import type { ChatMessage, Chip } from "@/lib/types";
+import type { ChatMessage, Chip, Rect } from "@/lib/types";
 
 type IconName = ComponentProps<typeof MaterialCommunityIcons>["name"];
 
@@ -32,6 +34,10 @@ type Props = {
 	chips: Chip[];
 	setChips: (c: Chip[]) => void;
 	onClose: () => void;
+	/** Page-space rect currently visible on screen. */
+	getView: () => Rect;
+	/** Attach everything on the page as a chip. */
+	onAttachPage: () => void;
 };
 
 const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
@@ -55,10 +61,18 @@ const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
 	},
 ];
 
-export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
+export function AgentPanel({
+	pageId,
+	chips,
+	setChips,
+	onClose,
+	getView,
+	onAttachPage,
+}: Props) {
 	const chat = useStore((s) => s.pages[pageId]?.chat ?? []);
 	const updatePage = useStore((s) => s.updatePage);
-	const [provider, setProvider] = useState<Provider>("claude");
+	// Gemini is wired up on the server but hidden in the UI for now.
+	const provider: Provider = "claude";
 	const [input, setInput] = useState("");
 	const [busy, setBusy] = useState(false);
 	const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -77,24 +91,39 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
 		setChips([]);
 		setBusy(true);
 		try {
-			const res = await ask(provider, mode, history);
-			// Annotations are relative to the first image chip of this message.
-			const anchor = chips.find((c) => c.image);
-			const annotations = anchor
-				? toPageAnnotations(res.annotations, anchor.bounds)
-				: [];
-			updatePage(pageId, (p) => ({
-				chat: [
-					...p.chat,
-					{
-						id: uid(),
-						role: "assistant",
-						text: res.reply,
-						transcription: res.transcription,
-					},
-				],
-				annotations: [...p.annotations, ...annotations],
-			}));
+			// Always send what's on screen, so Claude can see context and write anywhere visible — selection or not.
+			const viewRect = getView();
+			const pageView = renderPageView(
+				useStore.getState().pages[pageId],
+				viewRect,
+			);
+			const { messages, regions } = buildRequest(history, {
+				view: pageView.image,
+				viewRect,
+				text: pageView.context,
+			});
+			const res = await ask(provider, mode, messages);
+			const add = applyModelOutput(res.annotations, regions);
+			const wrote =
+				add.annotations.length + add.texts.length + add.maths.length > 0;
+			updatePage(
+				pageId,
+				(p) => ({
+					chat: [
+						...p.chat,
+						{
+							id: uid(),
+							role: "assistant",
+							text: res.reply,
+							transcription: res.transcription,
+						},
+					],
+					annotations: [...p.annotations, ...add.annotations],
+					texts: [...p.texts, ...add.texts],
+					maths: [...(p.maths ?? []), ...add.maths],
+				}),
+				wrote, // anything Claude puts on the page is one undo step
+			);
 		} catch (e) {
 			updatePage(pageId, (p) => ({
 				chat: [
@@ -166,20 +195,9 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
 	return (
 		<View style={styles.panel}>
 			<View style={styles.header}>
-				<View style={styles.segment}>
-					{(["claude", "gemini"] as Provider[]).map((p) => (
-						<Pressable
-							key={p}
-							onPress={() => setProvider(p)}
-							style={[styles.segBtn, provider === p && styles.segActive]}
-						>
-							<Text
-								style={[styles.segText, provider === p && { color: C.text }]}
-							>
-								{p === "claude" ? "Claude" : "Gemini"}
-							</Text>
-						</Pressable>
-					))}
+				<View style={styles.titleRow}>
+					<MaterialCommunityIcons name="creation" size={18} color={C.text} />
+					<Text style={styles.titleText}>Claude</Text>
 				</View>
 				<IconBtn icon="close" onPress={onClose} />
 			</View>
@@ -193,7 +211,8 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
 					<View style={styles.empty}>
 						<MaterialCommunityIcons name="lasso" size={28} color={C.faint} />
 						<Text style={styles.emptyText}>
-							Lasso part of your page, then tap “Ask about this”.
+							Ask anything — Claude can see your screen and write on the page.
+							Lasso something first to point at it.
 						</Text>
 					</View>
 				)}
@@ -207,11 +226,17 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
 						</View>
 					) : (
 						<View key={m.id} style={styles.aiMsg}>
-							<Text style={[styles.msgText, m.error && { color: C.danger }]}>
-								{m.text}
-							</Text>
+							{m.error ? (
+								<Text style={[styles.msgText, { color: C.danger }]}>
+									{m.text}
+								</Text>
+							) : (
+								<RichText text={m.text} />
+							)}
 							{!!m.transcription && (
-								<Text style={styles.mono}>{m.transcription}</Text>
+								<View style={styles.transcript}>
+									<RichText text={m.transcription} />
+								</View>
 							)}
 							{!m.error && (
 								<View style={styles.msgActions}>
@@ -266,29 +291,39 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
 					</ScrollView>
 				)}
 
-				{chips.length > 0 && (
-					<View style={styles.quick}>
-						{QUICK.map((q) => (
-							<Pressable
-								key={q.mode}
-								disabled={busy}
-								onPress={() => send(q.mode, input || q.prompt)}
-								style={({ pressed }) => [
-									styles.quickBtn,
-									pressed && { backgroundColor: C.selected },
-									busy && { opacity: 0.4 },
-								]}
-							>
-								<MaterialCommunityIcons
-									name={q.icon}
-									size={15}
-									color={C.icon}
-								/>
-								<Text style={styles.quickText}>{q.label}</Text>
-							</Pressable>
-						))}
-					</View>
-				)}
+				<View style={styles.quick}>
+					<Pressable
+						disabled={busy}
+						onPress={onAttachPage}
+						style={({ pressed }) => [
+							styles.quickBtn,
+							pressed && { backgroundColor: C.selected },
+							busy && { opacity: 0.4 },
+						]}
+					>
+						<MaterialCommunityIcons
+							name="file-document-outline"
+							size={15}
+							color={C.icon}
+						/>
+						<Text style={styles.quickText}>Whole page</Text>
+					</Pressable>
+					{QUICK.map((q) => (
+						<Pressable
+							key={q.mode}
+							disabled={busy}
+							onPress={() => send(q.mode, input || q.prompt)}
+							style={({ pressed }) => [
+								styles.quickBtn,
+								pressed && { backgroundColor: C.selected },
+								busy && { opacity: 0.4 },
+							]}
+						>
+							<MaterialCommunityIcons name={q.icon} size={15} color={C.icon} />
+							<Text style={styles.quickText}>{q.label}</Text>
+						</Pressable>
+					))}
+				</View>
 
 				<View style={styles.inputRow}>
 					<TextInput
@@ -319,21 +354,37 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
 }
 
 function ChipPreview({ chip, small }: { chip: Chip; small?: boolean }) {
-	const h = small ? 56 : 110;
+	const h = small ? 56 : 96;
+	// Show each layer that will be sent: ink, original images, and the combined view (if any).
+	const layers = [
+		chip.image,
+		chip.ink,
+		...(chip.images ?? []),
+		chip.combined,
+	].filter((x): x is NonNullable<typeof x> => !!x);
 	return (
 		<View style={styles.chip}>
-			{chip.image && (
-				<Image
-					source={{ uri: `data:image/png;base64,${chip.image.base64}` }}
-					style={{
-						height: h,
-						width: Math.min(
-							small ? 120 : 260,
-							(chip.image.width / chip.image.height) * h,
-						),
-					}}
-					resizeMode="contain"
-				/>
+			{!!chip.label && <Text style={styles.chipLabel}>{chip.label}</Text>}
+			{layers.length > 0 && (
+				<View style={styles.chipLayers}>
+					{layers.map((img, i) => (
+						<Image
+							key={i}
+							source={{
+								uri: `data:${img.mime ?? "image/png"};base64,${img.base64}`,
+							}}
+							style={{
+								height: h,
+								width: Math.min(
+									small ? 110 : 220,
+									(img.width / img.height) * h,
+								),
+								backgroundColor: C.paper,
+							}}
+							resizeMode="contain"
+						/>
+					))}
+				</View>
 			)}
 			{!!chip.text && (
 				<Text numberOfLines={small ? 2 : 6} style={styles.chipText}>
@@ -379,19 +430,13 @@ const styles = StyleSheet.create({
 		paddingHorizontal: 12,
 		height: 52,
 	},
-	segment: {
+	titleRow: {
 		flexDirection: "row",
-		backgroundColor: C.bg,
-		borderRadius: R.sm,
-		padding: 2,
+		alignItems: "center",
+		gap: 8,
+		paddingLeft: 4,
 	},
-	segBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
-	segActive: {
-		backgroundColor: C.surface,
-		borderWidth: StyleSheet.hairlineWidth,
-		borderColor: C.border,
-	},
-	segText: { fontSize: 13, fontWeight: "600", color: C.muted },
+	titleText: { fontSize: 15, fontWeight: "600", color: C.text },
 	empty: {
 		alignItems: "center",
 		gap: 10,
@@ -414,14 +459,7 @@ const styles = StyleSheet.create({
 	},
 	aiMsg: { alignSelf: "stretch", gap: 8 },
 	msgText: { fontSize: 15, lineHeight: 22, color: C.text },
-	mono: {
-		fontFamily: "monospace",
-		fontSize: 13,
-		color: C.text,
-		backgroundColor: C.bg,
-		padding: 10,
-		borderRadius: R.sm,
-	},
+	transcript: { backgroundColor: C.bg, padding: 10, borderRadius: R.sm },
 	msgActions: { flexDirection: "row", gap: 16 },
 	action: { flexDirection: "row", alignItems: "center", gap: 4 },
 	actionText: { fontSize: 13, color: C.muted },
@@ -433,7 +471,23 @@ const styles = StyleSheet.create({
 		overflow: "hidden",
 		alignSelf: "flex-start",
 	},
-	chipText: { fontSize: 12, padding: 6, maxWidth: 200, color: C.text },
+	chipText: {
+		fontSize: 12,
+		padding: 6,
+		maxWidth: 220,
+		color: C.text,
+		fontFamily: "monospace",
+	},
+	chipLabel: {
+		fontSize: 11,
+		fontWeight: "600",
+		color: C.muted,
+		paddingHorizontal: 6,
+		paddingTop: 4,
+		textTransform: "uppercase",
+		letterSpacing: 0.4,
+	},
+	chipLayers: { flexDirection: "row", gap: 1, backgroundColor: C.border },
 	chipX: {
 		position: "absolute",
 		top: -6,

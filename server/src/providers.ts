@@ -1,13 +1,17 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { GoogleGenAI } from '@google/genai';
 import { MODE_INSTRUCTIONS, SYSTEM_PROMPT } from './prompts.js';
-import { RESPONSE_JSON_SCHEMA, type AskRequest, type AskResponse } from './schema.js';
+import { RESPONSE_JSON_SCHEMA, type AskRequest, type AskResponse, type ImagePart } from './schema.js';
 
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-5-5';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-flash-latest';
 
 let anthropic: Anthropic | null = null;
 let gemini: GoogleGenAI | null = null;
+
+const mediaType = (img: ImagePart) => (img.mime === 'image/jpeg' ? 'image/jpeg' : img.mime === 'image/webp' ? 'image/webp' : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
+
+const imageLabel = (img: ImagePart, i: number) => `Image ${i}${img.label ? ` — ${img.label}` : ''} (${img.width}×${img.height}px):`;
 
 function withModeInstruction(req: AskRequest) {
   // Append the mode instruction to the latest user turn so it applies to this request only.
@@ -39,10 +43,10 @@ export async function askClaude(req: AskRequest): Promise<AskResponse> {
     messages: messages.map((m) => ({
       role: m.role,
       content: [
-        ...(m.images ?? []).map((img) => ({
-          type: 'image' as const,
-          source: { type: 'base64' as const, media_type: 'image/png' as const, data: img.base64 },
-        })),
+        ...(m.images ?? []).flatMap((img, i) => [
+          { type: 'text' as const, text: imageLabel(img, i) },
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: mediaType(img), data: img.base64 } },
+        ]),
         { type: 'text' as const, text: m.text || '(see image)' },
       ],
     })),
@@ -68,7 +72,7 @@ export async function askGemini(req: AskRequest): Promise<AskResponse> {
     contents: messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [
-        ...(m.images ?? []).map((img) => ({ inlineData: { mimeType: 'image/png', data: img.base64 } })),
+        ...(m.images ?? []).flatMap((img, i) => [{ text: imageLabel(img, i) }, { inlineData: { mimeType: mediaType(img), data: img.base64 } }]),
         { text: m.text || '(see image)' },
       ],
     })),
@@ -96,7 +100,9 @@ function normalize(raw: unknown): AskResponse {
       const [y0, x0, y1, x1] = a.box.map(clamp);
       return {
         ...a,
+        image: Math.max(0, Math.round(Number(a.image) || 0)),
         box: [Math.min(y0, y1), Math.min(x0, x1), Math.max(y0, y1), Math.max(x0, x1)] as [number, number, number, number],
+        from: Array.isArray(a.from) && a.from.length === 2 ? ([clamp(a.from[0]), clamp(a.from[1])] as [number, number]) : undefined,
       };
     });
   return { reply: String(r.reply ?? ''), annotations, transcription: r.transcription };

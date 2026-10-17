@@ -1,29 +1,40 @@
 /** @format */
 
-import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { Stack, useLocalSearchParams } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AgentPanel } from "@/components/AgentPanel";
 import { InkCanvas } from "@/components/InkCanvas";
+import { SelectionBar } from "@/components/SelectionBar";
 import {
 	ColorMenu,
 	MoreMenu,
 	SideControls,
 	TopBar,
+	ZoomPill,
 	type Menu,
 } from "@/components/Toolbar";
-import { uid } from "@/lib/ink";
-import { renderSelection } from "@/lib/snapshot";
+import { selectAll, uid } from "@/lib/ink";
+import { prepareImage, renderSelection } from "@/lib/snapshot";
 import { useStore } from "@/lib/store";
-import { C, R, shadow } from "@/lib/theme";
-import type { Chip, Selection, Tool } from "@/lib/types";
+import { C } from "@/lib/theme";
+import type { Chip, Include, Selection, Tool } from "@/lib/types";
+import { resetViewport, useViewport, zoomAt } from "@/lib/viewport";
+
+const ALL: Include = { ink: true, images: true, text: true };
+const idsKey = (s: Selection | null) =>
+	s
+		? [s.strokeIds, s.textIds, s.mathIds, s.imageIds]
+				.map((a) => a.join(","))
+				.join("|")
+		: "";
 
 const TOOL_KEYS: Record<string, Tool> = {
 	p: "pen",
 	h: "highlighter",
+	s: "shape",
 	e: "eraser",
 	l: "lasso",
 	t: "text",
@@ -33,10 +44,34 @@ export default function NoteScreen() {
 	const { id } = useLocalSearchParams<{ id: string }>();
 	const page = useStore((s) => s.pages[id]);
 	const updatePage = useStore((s) => s.updatePage);
-	const [selection, setSelection] = useState<Selection | null>(null);
+	const [selection, setSelectionState] = useState<Selection | null>(null);
+	const [include, setInclude] = useState<Include>(ALL);
+	const [transforming, setTransforming] = useState(false);
+	// New selection → send everything by default; moving/resizing the same items keeps the toggles.
+	const setSelection = (s: Selection | null) => {
+		if (idsKey(s) !== idsKey(selection)) setInclude(ALL);
+		setSelectionState(s);
+	};
 	const [chips, setChips] = useState<Chip[]>([]);
 	const [agentOpen, setAgentOpen] = useState(false);
 	const [menu, setMenu] = useState<Menu>(null);
+	const viewport = useViewport();
+	const canvasSize = useRef({ width: 0, height: 0 });
+	const center = (): [number, number] => [
+		canvasSize.current.width / 2,
+		canvasSize.current.height / 2,
+	];
+	// Page-space rect currently on screen (sent to Claude as the "page view").
+	const visibleRect = () => {
+		const sc = viewport.scale.get();
+		const { width, height } = canvasSize.current;
+		return {
+			x: -viewport.tx.get() / sc,
+			y: -viewport.ty.get() / sc,
+			w: Math.max(1, width) / sc,
+			h: Math.max(1, height) / sc,
+		};
+	};
 
 	// Keyboard shortcuts (web / tablets with a keyboard): Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y, P H E L T, Esc
 	useEffect(() => {
@@ -60,6 +95,16 @@ export default function NoteScreen() {
 			} else if (mod && key === "y") {
 				e.preventDefault();
 				redoPage(id);
+			} else if (mod && (key === "=" || key === "+" || key === "-")) {
+				e.preventDefault();
+				zoomAt(
+					viewport,
+					viewport.scale.get() * (key === "-" ? 1 / 1.25 : 1.25),
+					...center(),
+				);
+			} else if (mod && key === "0") {
+				e.preventDefault();
+				resetViewport(viewport);
 			} else if (!mod && TOOL_KEYS[key]) {
 				setTool(TOOL_KEYS[key]);
 			} else if (key === "escape") {
@@ -69,6 +114,7 @@ export default function NoteScreen() {
 		};
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [id]);
 
 	if (!page) return <Text style={{ padding: 24 }}>Note not found.</Text>;
@@ -77,9 +123,16 @@ export default function NoteScreen() {
 		if (!selection) return;
 		setChips([
 			...chips,
-			renderSelection(useStore.getState().pages[id], selection),
+			renderSelection(useStore.getState().pages[id], selection, include),
 		]);
 		setSelection(null);
+		setAgentOpen(true);
+	}
+
+	function attachWholePage() {
+		const p = useStore.getState().pages[id];
+		const all = selectAll(p);
+		if (all) setChips([...chips, renderSelection(p, all, ALL, "whole page")]);
 		setAgentOpen(true);
 	}
 
@@ -91,7 +144,7 @@ export default function NoteScreen() {
 		const opts: ImagePicker.ImagePickerOptions = {
 			mediaTypes: ["images"],
 			base64: true,
-			quality: 0.6,
+			quality: 0.9,
 		};
 		const res =
 			source === "camera"
@@ -99,18 +152,35 @@ export default function NoteScreen() {
 				: await ImagePicker.launchImageLibraryAsync(opts);
 		const asset = res.canceled ? null : res.assets[0];
 		if (!asset?.base64) return;
-		const w = Math.min(480, asset.width);
-		const h = (asset.height / asset.width) * w;
-		updatePage(
-			id,
-			(p) => ({
-				images: [
-					...p.images,
-					{ id: uid(), x: 40, y: 40, w, h, base64: asset.base64! },
-				],
-			}),
-			true,
-		);
+		// Store a downscaled copy (≤2048px): crisp for the AI, small enough to send and persist.
+		const img = prepareImage(asset.base64) ?? {
+			base64: asset.base64,
+			width: asset.width,
+			height: asset.height,
+			mime: "image/jpeg",
+		};
+		const view = visibleRect();
+		const w = Math.min(view.w * 0.6, 480 / viewport.scale.get(), img.width);
+		const h = (img.height / img.width) * w;
+		const image = {
+			id: uid(),
+			x: view.x + (view.w - w) / 2,
+			y: view.y + (view.h - h) / 2,
+			w,
+			h,
+			base64: img.base64,
+			mime: img.mime,
+		};
+		updatePage(id, (p) => ({ images: [...p.images, image] }), true);
+		// Select it right away so it can be moved/resized; switch to the lasso tool so the handles work.
+		useStore.getState().setTool("lasso");
+		setSelection({
+			strokeIds: [],
+			textIds: [],
+			mathIds: [],
+			imageIds: [image.id],
+			bounds: { x: image.x, y: image.y, w, h },
+		});
 	}
 
 	return (
@@ -124,35 +194,29 @@ export default function NoteScreen() {
 				setMenu={setMenu}
 			/>
 			<View style={styles.body}>
-				<View style={{ flex: 1 }}>
+				<View
+					style={{ flex: 1 }}
+					onLayout={(e) => (canvasSize.current = e.nativeEvent.layout)}
+				>
 					<InkCanvas
 						pageId={id}
 						selection={selection}
 						onSelectionChange={setSelection}
+						viewport={viewport}
+						onTransformingChange={setTransforming}
 					/>
 					<SideControls pageId={id} />
-					{selection && (
-						<Pressable
-							style={[
-								styles.askBtn,
-								shadow,
-								{
-									left: Math.max(
-										64,
-										selection.bounds.x + selection.bounds.w - 150,
-									),
-									top: selection.bounds.y + selection.bounds.h + 20,
-								},
-							]}
-							onPress={addSelectionToAI}
-						>
-							<MaterialCommunityIcons
-								name="creation"
-								size={16}
-								color={C.onPrimary}
-							/>
-							<Text style={styles.askText}>Ask about this</Text>
-						</Pressable>
+					<ZoomPill viewport={viewport} getCenter={center} />
+					{selection && !transforming && (
+						<SelectionBar
+							pageId={id}
+							selection={selection}
+							viewport={viewport}
+							include={include}
+							setInclude={setInclude}
+							onAsk={addSelectionToAI}
+							onSelectionChange={setSelection}
+						/>
 					)}
 				</View>
 				{agentOpen && (
@@ -161,6 +225,8 @@ export default function NoteScreen() {
 						chips={chips}
 						setChips={setChips}
 						onClose={() => setAgentOpen(false)}
+						getView={visibleRect}
+						onAttachPage={attachWholePage}
 					/>
 				)}
 			</View>
@@ -191,15 +257,4 @@ export default function NoteScreen() {
 const styles = StyleSheet.create({
 	root: { flex: 1, backgroundColor: C.surface },
 	body: { flex: 1, flexDirection: "row" },
-	askBtn: {
-		position: "absolute",
-		flexDirection: "row",
-		alignItems: "center",
-		gap: 6,
-		backgroundColor: C.primary,
-		paddingHorizontal: 14,
-		height: 38,
-		borderRadius: R.pill,
-	},
-	askText: { color: C.onPrimary, fontWeight: "600", fontSize: 14 },
 });
