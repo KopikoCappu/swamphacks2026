@@ -27,7 +27,7 @@ const overlaps = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y
 export function renderRegion(
   page: Page,
   region: Rect,
-  opts: { strokeIds?: string[]; imageIds?: string[]; longSide?: number; maxScale?: number } = {},
+  opts: { strokeIds?: string[]; imageIds?: string[]; longSide?: number; maxScale?: number; outline?: Rect } = {},
 ): RenderedImage | null {
   const strokes = page.strokes.filter((s) => (opts.strokeIds ? opts.strokeIds.includes(s.id) : overlaps(strokeBounds(s), region)));
   const images = page.images.filter((i) => (opts.imageIds ? opts.imageIds.includes(i.id) : overlaps(i, region)));
@@ -63,6 +63,16 @@ export function renderRegion(
       paint.setStyle(PaintStyle.Fill);
     }
     canvas.drawPath(strokePath(s), paint);
+  }
+
+  if (opts.outline) {
+    const o = opts.outline;
+    const paint = Skia.Paint();
+    paint.setAntiAlias(true);
+    paint.setColor(Skia.Color('#2F6FEB'));
+    paint.setStyle(PaintStyle.Stroke);
+    paint.setStrokeWidth(3 / scale);
+    canvas.drawRect(Skia.XYWHRect(o.x - 8, o.y - 8, o.w + 16, o.h + 16), paint);
   }
 
   surface.flush();
@@ -133,12 +143,17 @@ export function prepareImage(base64: string, maxSide = 2048): { base64: string; 
  * What's on screen right now: an image of the ink plus a text list of typed text / equations with their
  * normalized positions, so the model can place writing anywhere visible even without a selection.
  */
-export function renderPageView(page: Page, view: Rect): { image: RenderedImage | null; context: string } {
-  const image = renderRegion(page, view, { longSide: 1280, maxScale: 2 });
+export function renderPageView(page: Page, view: Rect, selection?: Rect | null): { image: RenderedImage | null; context: string } {
+  const image = renderRegion(page, view, { longSide: 1280, maxScale: 2, outline: selection ?? undefined });
   const norm = (x: number, y: number) => `[y=${Math.round(((y - view.y) / view.h) * 1000)}, x=${Math.round(((x - view.x) / view.w) * 1000)}]`;
+  const n = (v: number, o: number, s: number) => Math.round(((v - o) / s) * 1000);
+  const where = selection
+    ? `My selection is outlined in blue on the page view at [ymin=${n(selection.y, view.y, view.h)}, xmin=${n(selection.x, view.x, view.w)}, ymax=${n(selection.y + selection.h, view.y, view.h)}, xmax=${n(selection.x + selection.w, view.x, view.w)}].`
+    : 'I have not selected anything; the page view is all you have.';
   const lines = [
     ...page.texts.filter((t) => t.text.trim() && overlaps(textBounds(t), view)).map((t) => `- typed text at ${norm(t.x, t.y)}: ${JSON.stringify(t.text)}`),
     ...(page.maths ?? []).filter((m) => overlaps(mathBounds(m), view)).map((m) => `- equation at ${norm(m.x, m.y)}: $$${m.latex}$$`),
   ];
-  return { image, context: lines.length ? `Typed content visible on the page view (positions on the page view image):\n${lines.join('\n')}` : '' };
+  const typed = lines.length ? `\nTyped content visible on the page view (positions on the page view image):\n${lines.join('\n')}` : '';
+  return { image, context: where + typed };
 }

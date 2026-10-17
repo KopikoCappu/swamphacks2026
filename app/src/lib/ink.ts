@@ -1,6 +1,6 @@
 import { Skia, type SkPath } from '@shopify/react-native-skia';
 import { getStroke } from 'perfect-freehand';
-import type { MathBlock, Page, PageImage, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
+import type { Annotation, MathBlock, Page, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -100,39 +100,37 @@ export const textBounds = (t: TextBlock): Rect => ({
   h: Math.max(1, t.text.split('\n').length) * textLineHeight(t) + 8,
 });
 
-/** Everything mostly inside the lasso polygon. */
 export const mathBounds = (m: MathBlock): Rect => ({ x: m.x, y: m.y, w: m.w, h: m.h });
+
+/** Clickable area of an AI note or mark (marks extend a little past their target rect). */
+export function annotationBounds(a: Annotation): Rect {
+  const k = a.scale ?? 1;
+  if (a.kind === 'note') return { x: a.rect.x, y: a.rect.y, w: Math.max(a.rect.w, 60 * k), h: Math.max(a.rect.h, 28 * k) };
+  const pad = 14 * k;
+  const r = { x: a.rect.x - pad, y: a.rect.y - pad, w: a.rect.w + pad * 2, h: a.rect.h + pad * 2 };
+  if (a.kind === 'check' || a.kind === 'cross') r.w += 50 * k; // drawn just right of the target
+  return a.from ? unionRects([r, { x: a.from[0] - 6, y: a.from[1] - 6, w: 12, h: 12 }])! : r;
+}
 
 export const rectContains = (r: Rect, x: number, y: number) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
-export function selectWithLasso(
-  lasso: Point[],
-  strokes: Stroke[],
-  texts: TextBlock[],
-  images: PageImage[],
-  maths: MathBlock[] = [],
-): Selection | null {
+/** Everything mostly inside the lasso polygon (ink by point coverage, everything else by its center). */
+export function selectWithLasso(lasso: Point[], page: Page): Selection | null {
   if (lasso.length < 3) return null;
-  const strokeIds = strokes
+  const strokeIds = page.strokes
     .filter((s) => {
       const inside = s.points.filter(([x, y]) => pointInPolygon(x, y, lasso)).length;
       return inside / s.points.length >= 0.5;
     })
     .map((s) => s.id);
   const center = (r: Rect) => [r.x + r.w / 2, r.y + r.h / 2] as const;
-  const textIds = texts.filter((t) => pointInPolygon(...center(textBounds(t)), lasso)).map((t) => t.id);
-  const imageIds = images.filter((im) => !im.locked && pointInPolygon(...center(im), lasso)).map((i) => i.id);
-  const mathIds = maths.filter((m) => pointInPolygon(...center(mathBounds(m)), lasso)).map((m) => m.id);
-
-  const rects = [
-    ...strokes.filter((s) => strokeIds.includes(s.id)).map(strokeBounds),
-    ...texts.filter((t) => textIds.includes(t.id)).map(textBounds),
-    ...images.filter((i) => imageIds.includes(i.id)),
-    ...maths.filter((m) => mathIds.includes(m.id)).map(mathBounds),
-  ];
-  const bounds = unionRects(rects);
-  if (!bounds) return null;
-  return { strokeIds, textIds, mathIds, imageIds, bounds };
+  return makeSelection(page, {
+    strokeIds,
+    textIds: page.texts.filter((t) => pointInPolygon(...center(textBounds(t)), lasso)).map((t) => t.id),
+    imageIds: page.images.filter((im) => !im.locked && pointInPolygon(...center(im), lasso)).map((i) => i.id),
+    mathIds: (page.maths ?? []).filter((m) => pointInPolygon(...center(mathBounds(m)), lasso)).map((m) => m.id),
+    annotationIds: page.annotations.filter((a) => pointInPolygon(...center(annotationBounds(a)), lasso)).map((a) => a.id),
+  });
 }
 
 /** Strokes touched by the eraser at (x, y). */
@@ -187,7 +185,8 @@ export function shapePoints(kind: ShapeKind, x0: number, y0: number, x1: number,
 
 // ---------- Selection: tap-select, bounds, move/resize ----------
 
-const EMPTY_SEL = { strokeIds: [], textIds: [], mathIds: [], imageIds: [] };
+const EMPTY_SEL = { strokeIds: [], textIds: [], mathIds: [], imageIds: [], annotationIds: [] };
+const annIds = (sel: { annotationIds?: string[] }) => sel.annotationIds ?? [];
 
 /** Bounds of everything in a selection (null if it's empty). */
 export function selectionBounds(page: Page, sel: Omit<Selection, 'bounds'>): Rect | null {
@@ -196,6 +195,7 @@ export function selectionBounds(page: Page, sel: Omit<Selection, 'bounds'>): Rec
     ...page.texts.filter((t) => sel.textIds.includes(t.id)).map(textBounds),
     ...(page.maths ?? []).filter((m) => sel.mathIds.includes(m.id)).map(mathBounds),
     ...page.images.filter((i) => sel.imageIds.includes(i.id)),
+    ...page.annotations.filter((a) => annIds(sel).includes(a.id)).map(annotationBounds),
   ]);
 }
 
@@ -211,8 +211,12 @@ export function hitTest(page: Page, x: number, y: number, tolerance: number): Se
   if (math) return makeSelection(page, { mathIds: [math.id] });
   const text = [...page.texts].reverse().find((t) => rectContains(textBounds(t), x, y));
   if (text) return makeSelection(page, { textIds: [text.id] });
+  const note = [...page.annotations].reverse().find((a) => a.kind === 'note' && rectContains(annotationBounds(a), x, y));
+  if (note) return makeSelection(page, { annotationIds: [note.id] });
   const stroke = strokesHitAt(page.strokes, x, y, tolerance).pop();
   if (stroke) return makeSelection(page, { strokeIds: [stroke] });
+  const mark = [...page.annotations].reverse().find((a) => a.kind !== 'note' && rectContains(annotationBounds(a), x, y));
+  if (mark) return makeSelection(page, { annotationIds: [mark.id] });
   const image = [...page.images].reverse().find((i) => !i.locked && rectContains(i, x, y));
   if (image) return makeSelection(page, { imageIds: [image.id] });
   return null;
@@ -238,6 +242,11 @@ export function transformSelection(page: Page, sel: Selection, t: Transform): Pa
       has(sel.textIds, b.id) ? { ...b, x: mapX(t, b.x), y: mapY(t, b.y), width: b.width * t.s, size: (b.size ?? TEXT_SIZE) * t.s } : b,
     ),
     maths: (page.maths ?? []).map((m) => (has(sel.mathIds, m.id) ? { ...m, ...mapRect(t, mathBounds(m)), size: (m.size ?? 24) * t.s } : m)),
+    annotations: page.annotations.map((a) =>
+      has(annIds(sel), a.id)
+        ? { ...a, rect: mapRect(t, a.rect), from: a.from ? ([mapX(t, a.from[0]), mapY(t, a.from[1])] as [number, number]) : undefined, scale: (a.scale ?? 1) * t.s }
+        : a,
+    ),
   };
 }
 
@@ -249,14 +258,22 @@ export function duplicateSelection(page: Page, sel: Selection, offset = 24) {
   const images = fresh(moved.images!, sel.imageIds);
   const texts = fresh(moved.texts!, sel.textIds);
   const maths = fresh(moved.maths!, sel.mathIds);
+  const annotations = fresh(moved.annotations!, annIds(sel)).map((a) => ({ ...a, createdAt: 0 })); // no draw-in animation
   return {
     changes: {
       strokes: [...page.strokes, ...strokes],
       images: [...page.images, ...images],
       texts: [...page.texts, ...texts],
       maths: [...(page.maths ?? []), ...maths],
+      annotations: [...page.annotations, ...annotations],
     },
-    ids: { strokeIds: strokes.map((x) => x.id), imageIds: images.map((x) => x.id), textIds: texts.map((x) => x.id), mathIds: maths.map((x) => x.id) },
+    ids: {
+      strokeIds: strokes.map((x) => x.id),
+      imageIds: images.map((x) => x.id),
+      textIds: texts.map((x) => x.id),
+      mathIds: maths.map((x) => x.id),
+      annotationIds: annotations.map((x) => x.id),
+    },
   };
 }
 
@@ -266,6 +283,7 @@ export function deleteSelection(page: Page, sel: Selection): Partial<Page> {
     images: page.images.filter((i) => !sel.imageIds.includes(i.id)),
     texts: page.texts.filter((t) => !sel.textIds.includes(t.id)),
     maths: (page.maths ?? []).filter((m) => !sel.mathIds.includes(m.id)),
+    annotations: page.annotations.filter((a) => !annIds(sel).includes(a.id)),
   };
 }
 

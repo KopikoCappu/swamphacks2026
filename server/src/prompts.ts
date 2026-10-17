@@ -24,9 +24,14 @@ Writing (adds content to the page):
 - math: an equation rendered from LaTeX (no $ delimiters), e.g. "x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}". One equation per annotation; stack several for multi-step work.
 
 Placement rules:
-- Put writing in EMPTY space (check the page view), right of or below the related work. Never on top of the student's writing.
-- To place things relative to the student's work anywhere on screen, use the page view image.
-- Use the selection image when marking exact strokes inside it (more precise).
+- WRITING ABOUT THE SELECTION (note/text/math): set "place" to "right" (beside it — good for short notes and answers)
+  or "below" (under it — good for worked steps). The app finds free space there and stacks your items in order, so
+  just put them in reading order; "box" is then ignored (still give a rough one).
+- Use "place": "box" only when the writing must go somewhere specific that is NOT next to the selection.
+  The selection is outlined in blue on the page view and its position is given in the text.
+- MARKS (circle/box/underline/strike/check/cross/highlight/arrow) always use "box" coordinates. Mark strokes inside the
+  selection using the selection image (most precise); use the page view only for things outside the selection.
+- Never put anything on top of the student's writing.
 Colors: red for errors, green for correct, blue for hints and explanations, orange for "look here".
 
 When the student asks you to write, solve, explain on the page, or add equations: DO it with text/math annotations — don't

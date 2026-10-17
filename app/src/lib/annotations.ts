@@ -1,6 +1,6 @@
 import { Skia, type SkPath } from '@shopify/react-native-skia';
-import { uid } from './ink';
-import type { Annotation, AnnotationKind, MathBlock, Rect, TextBlock } from './types';
+import { annotationBounds, mathBounds, strokeBounds, textBounds, uid } from './ink';
+import type { Annotation, AnnotationKind, MathBlock, Page, Rect, TextBlock } from './types';
 
 export const AI_COLORS: Record<string, string> = {
   red: '#E5484D',
@@ -17,29 +17,85 @@ export type ModelAnnotation = {
   image: number;
   box: [number, number, number, number]; // [ymin, xmin, ymax, xmax] 0-1000
   from?: [number, number]; // arrow start [y, x] 0-1000
+  place?: 'right' | 'below' | 'box';
   text?: string;
   color?: keyof typeof AI_COLORS;
 };
 
 export type PageAdditions = { annotations: Annotation[]; texts: TextBlock[]; maths: MathBlock[] };
 
+const GAP = 16;
+const overlap = (a: Rect, b: Rect) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+/** Rough size of a piece of AI writing before it renders (real sizes are measured afterwards). */
+function estimateSize(a: ModelAnnotation, width: number): { w: number; h: number } {
+  const text = a.text ?? '';
+  if (a.kind === 'math') {
+    const tall = /\\(frac|dfrac|sum|int|prod|sqrt|binom|matrix|begin)/.test(text);
+    return { w: Math.min(640, Math.max(120, text.length * 9)), h: tall ? 72 : 48 };
+  }
+  if (a.kind === 'note') {
+    const w = Math.min(280, Math.max(60, text.length * 11));
+    return { w, h: 30 * Math.ceil((text.length * 11) / 280) };
+  }
+  const lines = text.split('\n').reduce((n, para) => n + Math.max(1, Math.ceil((para.length * 9.5) / width)), 0);
+  return { w: width, h: lines * 32 + 8 };
+}
+
+/**
+ * Lays writing out next to the selection: a column to its right and a column below it, each filled top-down
+ * in the model's order, skipping over anything already on the page. Far more reliable than model coordinates.
+ */
+function makeFlow(anchor: Rect, page: Page) {
+  const occupied: Rect[] = [
+    ...page.strokes.map(strokeBounds),
+    ...page.texts.map(textBounds),
+    ...(page.maths ?? []).map(mathBounds),
+    ...page.images,
+    ...page.annotations.filter((a) => a.kind === 'note').map(annotationBounds),
+    anchor,
+  ];
+  const cursor = { right: anchor.y, below: anchor.y + anchor.h + GAP };
+  return (side: 'right' | 'below', w: number, h: number): Rect => {
+    const x = side === 'right' ? anchor.x + anchor.w + GAP * 2 : anchor.x;
+    let y = cursor[side];
+    for (let tries = 0; tries < 400; tries++, y += 8) {
+      const r = { x, y, w, h };
+      if (!occupied.some((o) => overlap({ x: r.x - 4, y: r.y - 4, w: r.w + 8, h: r.h + 8 }, o))) break;
+    }
+    const placed = { x, y, w, h };
+    occupied.push(placed);
+    cursor[side] = y + h + GAP / 2;
+    return placed;
+  };
+}
+
 /**
  * Map the model's output back into page space. `regions[i]` is the page-space rect that request image i
- * showed, so boxes on any image (a selection or the page view) land in the right place.
+ * showed, so boxes on any image (a selection or the page view) land in the right place. Writing that asks to
+ * be placed "right"/"below" is laid out next to `anchor` (the student's selection) instead.
  */
-export function applyModelOutput(items: ModelAnnotation[], regions: Rect[]): PageAdditions {
+export function applyModelOutput(items: ModelAnnotation[], regions: Rect[], opts: { anchor?: Rect | null; page?: Page } = {}): PageAdditions {
   const now = Date.now();
   const out: PageAdditions = { annotations: [], texts: [], maths: [] };
+  const flow = opts.anchor && opts.page ? makeFlow(opts.anchor, opts.page) : null;
   items.forEach((a, i) => {
     const region = regions[a.image] ?? regions[regions.length - 1];
     if (!region) return;
     const [ymin, xmin, ymax, xmax] = a.box;
-    const rect: Rect = {
+    let rect: Rect = {
       x: region.x + (xmin / 1000) * region.w,
       y: region.y + (ymin / 1000) * region.h,
       w: ((xmax - xmin) / 1000) * region.w,
       h: ((ymax - ymin) / 1000) * region.h,
     };
+    const writing = a.kind === 'text' || a.kind === 'math' || a.kind === 'note';
+    if (writing && flow && a.place !== 'box') {
+      const side = a.place === 'below' ? 'below' : 'right';
+      const width = side === 'below' ? Math.max(280, Math.min(560, opts.anchor!.w)) : 320;
+      const size = estimateSize(a, width);
+      rect = flow(side, size.w, size.h);
+    }
     const color = AI_COLORS[a.color ?? (a.kind === 'check' ? 'green' : a.kind === 'text' || a.kind === 'math' ? 'blue' : 'red')] ?? AI_COLORS.red;
 
     if (a.kind === 'text') {

@@ -15,7 +15,7 @@ import type { Chip, Include, Selection, Tool } from '@/lib/types';
 import { resetViewport, useViewport, zoomAt } from '@/lib/viewport';
 
 const ALL: Include = { ink: true, images: true, text: true };
-const idsKey = (s: Selection | null) => (s ? [s.strokeIds, s.textIds, s.mathIds, s.imageIds].map((a) => a.join(',')).join('|') : '');
+const idsKey = (s: Selection | null) => (s ? [s.strokeIds, s.textIds, s.mathIds, s.imageIds, s.annotationIds ?? []].map((a) => a.join(',')).join('|') : '');
 
 const TOOL_KEYS: Record<string, Tool> = { p: 'pen', h: 'highlighter', s: 'shape', e: 'eraser', l: 'lasso', t: 'text' };
 

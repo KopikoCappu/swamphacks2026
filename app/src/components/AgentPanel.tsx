@@ -50,10 +50,13 @@ export function AgentPanel({ pageId, chips, setChips, onClose, getView, onAttach
     try {
       // Always send what's on screen, so Claude can see context and write anywhere visible — selection or not.
       const viewRect = getView();
-      const pageView = renderPageView(useStore.getState().pages[pageId], viewRect);
+      const page = useStore.getState().pages[pageId];
+      // The selection Claude should write next to (a whole-page attachment isn't a useful anchor).
+      const anchor = chips.find((c) => c.label !== 'whole page')?.bounds ?? null;
+      const pageView = renderPageView(page, viewRect, anchor);
       const { messages, regions } = buildRequest(history, { view: pageView.image, viewRect, text: pageView.context });
       const res = await ask(provider, mode, messages);
-      const add = applyModelOutput(res.annotations, regions);
+      const add = applyModelOutput(res.annotations, regions, { anchor, page });
       const wrote = add.annotations.length + add.texts.length + add.maths.length > 0;
       updatePage(
         pageId,

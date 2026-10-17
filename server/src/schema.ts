@@ -32,6 +32,8 @@ export type ModelAnnotation = {
   box: [number, number, number, number];
   /** arrow only: start point [y, x] (0-1000); the arrow points at `box` */
   from?: [number, number];
+  /** note/text/math: let the app lay it out next to the student's selection ("right"/"below"), or use `box` exactly */
+  place?: 'right' | 'below' | 'box';
   /** note/text: the words. math: LaTeX without $ delimiters. */
   text?: string;
   color?: AnnotationColor;
@@ -76,6 +78,12 @@ export const RESPONSE_JSON_SCHEMA = {
             description: 'note: short handwritten-style words. text: typed text to put on the page. math: LaTeX source with NO $ delimiters.',
           },
           color: { type: 'string', enum: ['red', 'green', 'blue', 'orange'] },
+          place: {
+            type: 'string',
+            enum: ['right', 'below', 'box'],
+            description:
+              'Only for note/text/math. "right" / "below": the app places it in free space right of / below the student\'s selection (preferred when there is a selection). "box": put it exactly at `box`.',
+          },
         },
         required: ['kind', 'image', 'box'],
         additionalProperties: false,

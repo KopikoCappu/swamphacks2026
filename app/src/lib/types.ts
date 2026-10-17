@@ -41,6 +41,8 @@ export type Annotation = {
   text?: string;
   /** arrow only: start point in page space; the arrow points at `rect` */
   from?: [number, number];
+  /** grows/shrinks with resize: note font size and mark stroke width */
+  scale?: number;
   createdAt: number;
 };
 
@@ -102,5 +104,7 @@ export type Selection = {
   textIds: string[];
   mathIds: string[];
   imageIds: string[];
+  /** AI notes and marks */
+  annotationIds?: string[];
   bounds: Rect;
 };

@@ -218,7 +218,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
         const ys = pts.map((p) => p[1]);
         const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * viewport.scale.get();
         if (extent < 8) onSelRef.current(hitTest(page, pts[0][0], pts[0][1], 10 / viewport.scale.get()));
-        else onSelRef.current(selectWithLasso(pts, page.strokes, page.texts, page.images, page.maths));
+        else onSelRef.current(selectWithLasso(pts, page));
       } else if (tool === 'text') {
         const [x, y] = pts[0];
         const id = uid();
@@ -323,6 +323,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
   const moving = !!(xf && selection);
   const selStrokes = new Set(moving ? selection!.strokeIds : []);
   const selImages = new Set(moving ? selection!.imageIds : []);
+  const selAnns = new Set(moving ? (selection!.annotationIds ?? []) : []);
   const xfTransform = xf ? [{ translateX: xf.ax + xf.dx }, { translateY: xf.ay + xf.dy }, { scale: xf.s }, { translateX: -xf.ax }, { translateY: -xf.ay }] : [];
   const selBox = selection ? mapRect(xf ?? IDENTITY, padRect(selection.bounds)) : null;
   const tFor = (ids: string[] | undefined, id: string) => (xf && ids?.includes(id) ? xf : IDENTITY);
@@ -394,9 +395,20 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
                 </>
               )}
 
-              {page.annotations.map((a) => (
-                <AnnotationStroke key={a.id} a={a} />
-              ))}
+              {page.annotations
+                .filter((a) => !selAnns.has(a.id))
+                .map((a) => (
+                  <AnnotationStroke key={a.id} a={a} />
+                ))}
+              {moving && (
+                <Group transform={xfTransform}>
+                  {page.annotations
+                    .filter((a) => selAnns.has(a.id))
+                    .map((a) => (
+                      <AnnotationStroke key={a.id} a={a} />
+                    ))}
+                </Group>
+              )}
             </Group>
           </Canvas>
         </View>
@@ -448,7 +460,17 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTr
         {page.annotations
           .filter((a) => a.kind === 'note' && a.text)
           .map((a) => (
-            <AiNote key={a.id} a={a} />
+            <AiNote
+              key={a.id}
+              a={a}
+              tt={tFor(selection?.annotationIds, a.id)}
+              selected={!!selection?.annotationIds?.includes(a.id)}
+              onMeasure={(w, h) => {
+                // Real rendered size → accurate tap/lasso targets and AI placement.
+                if (!xf && (Math.abs(w - a.rect.w) > 2 || Math.abs(h - a.rect.h) > 2))
+                  updatePage(pageId, (p) => ({ annotations: p.annotations.map((x) => (x.id === a.id ? { ...x, rect: { ...x.rect, w, h } } : x)) }));
+              }}
+            />
           ))}
       </Animated.View>
     </View>
@@ -498,16 +520,25 @@ function AnnotationStroke({ a }: { a: Annotation }) {
   if (!path) return null;
   // Highlights fade in as a translucent fill; everything else "draws itself" with a stroke trim.
   if (a.kind === 'highlight') return <Path path={path} color={a.color} opacity={fade} />;
-  return <Path path={path} color={a.color} style="stroke" strokeWidth={3.5} strokeCap="round" strokeJoin="round" end={end} />;
+  return <Path path={path} color={a.color} style="stroke" strokeWidth={3.5 * (a.scale ?? 1)} strokeCap="round" strokeJoin="round" end={end} />;
 }
 
-/** AI margin note in a handwriting font. */
-function AiNote({ a }: { a: Annotation }) {
+const NOTE_SIZE = 26;
+const NOTE_MAX_WIDTH = 280;
+
+/** AI margin note in a handwriting font. Movable/resizable like everything else (scale grows the font). */
+function AiNote({ a, tt, selected, onMeasure }: { a: Annotation; tt: Transform; selected: boolean; onMeasure: (w: number, h: number) => void }) {
   const delay = useAppearDelay(a);
+  const k = (a.scale ?? 1) * tt.s;
   return (
     <Animated.Text
       entering={delay === null ? undefined : FadeIn.delay(delay).duration(600)}
-      style={[styles.note, { left: a.rect.x, top: a.rect.y, maxWidth: Math.max(180, a.rect.w), color: a.color }]}
+      onLayout={(e) => onMeasure(e.nativeEvent.layout.width / tt.s, e.nativeEvent.layout.height / tt.s)}
+      style={[
+        styles.note,
+        { left: mapX(tt, a.rect.x), top: mapY(tt, a.rect.y), maxWidth: NOTE_MAX_WIDTH * k, fontSize: NOTE_SIZE * k, lineHeight: (NOTE_SIZE + 2) * k, color: a.color },
+        selected && styles.textSelected,
+      ]}
     >
       {a.text}
     </Animated.Text>
@@ -524,6 +555,6 @@ const styles = StyleSheet.create({
     paddingVertical: 0,
   },
   textSelected: { backgroundColor: 'rgba(47,111,235,0.10)', borderRadius: 4 },
-  note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold', fontSize: 26, lineHeight: 28 },
+  note: { position: 'absolute', fontFamily: 'Caveat_600SemiBold' },
   math: { position: 'absolute', paddingHorizontal: 4, borderRadius: 4 },
 });
