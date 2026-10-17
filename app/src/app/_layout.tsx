@@ -10,11 +10,14 @@ SplashScreen.preventAutoHideAsync();
 startSync();
 
 export default function RootLayout() {
-  const [loaded] = useFonts({ Caveat_600SemiBold });
+  const [loaded, fontError] = useFonts({ Caveat_600SemiBold });
+  // A font that fails to load must never block the app — fall back to the system font instead.
+  const ready = loaded || !!fontError;
   useEffect(() => {
-    if (loaded) SplashScreen.hideAsync();
-  }, [loaded]);
-  if (!loaded) return null;
+    if (fontError) console.warn('[fonts] falling back to system font:', fontError.message);
+    if (ready) SplashScreen.hideAsync();
+  }, [ready, fontError]);
+  if (!ready) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
