@@ -8,7 +8,7 @@ export const C = {
   border: 'rgba(0,0,0,0.08)',
   text: '#1C1C1E',
   icon: '#3A3A3C',
-  muted: '#8E8E93',
+  muted: '#c5c5cd',
   faint: '#C7C7CC',
   selected: 'rgba(0,0,0,0.07)',
   primary: '#1C1C1E', // the one strong element (Ask AI, send)

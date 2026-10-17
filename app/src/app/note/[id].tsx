@@ -46,7 +46,8 @@ export default function NoteScreen() {
 	const updatePage = useStore((s) => s.updatePage);
 	const [selection, setSelectionState] = useState<Selection | null>(null);
 	const [include, setInclude] = useState<Include>(ALL);
-	const [transforming, setTransforming] = useState(false);
+  const [transforming, setTransforming] = useState(false);
+  const [font, setFont] = useState(null)
 	// New selection → send everything by default; moving/resizing the same items keeps the toggles.
 	const setSelection = (s: Selection | null) => {
 		if (idsKey(s) !== idsKey(selection)) setInclude(ALL);
@@ -117,7 +118,7 @@ export default function NoteScreen() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [id]);
 
-	if (!page) return <Text style={{ padding: 24 }}>Note not found.</Text>;
+	if (!page) return <Text testID="note-screen-text" style={{ padding: 24 }}>Note not found.</Text>;
 
 	function addSelectionToAI() {
 		if (!selection) return;
@@ -184,7 +185,7 @@ export default function NoteScreen() {
 	}
 
 	return (
-		<SafeAreaView style={styles.root} edges={["top", "left", "right"]}>
+		<SafeAreaView testID="note-screen-root" style={styles.root} edges={["top", "left", "right"]}>
 			<Stack.Screen options={{ headerShown: false }} />
 			<TopBar
 				pageId={id}
@@ -193,8 +194,8 @@ export default function NoteScreen() {
 				menu={menu}
 				setMenu={setMenu}
 			/>
-			<View style={styles.body}>
-				<View
+			<View testID="note-screen-body" style={styles.body}>
+				<View testID="note-screen-view"
 					style={{ flex: 1 }}
 					onLayout={(e) => (canvasSize.current = e.nativeEvent.layout)}
 				>
@@ -233,7 +234,7 @@ export default function NoteScreen() {
 
 			{menu && (
 				<>
-					<Pressable
+					<Pressable testID="note-screen-pressable"
 						style={StyleSheet.absoluteFill}
 						onPress={() => setMenu(null)}
 					/>

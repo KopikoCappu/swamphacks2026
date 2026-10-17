@@ -19,7 +19,7 @@ export function NoteThumb({ page }: { page: Page }) {
   }
 
   return (
-    <View style={[StyleSheet.absoluteFill, { backgroundColor: page.bg ?? '#FFFFFF' }]} onLayout={(e) => setSize(e.nativeEvent.layout)}>
+    <View testID="note-thumb-view" style={[StyleSheet.absoluteFill, { backgroundColor: page.bg ?? '#FFFFFF' }]} onLayout={(e) => setSize(e.nativeEvent.layout)}>
       {bounds && size.width > 0 && (
         <Canvas style={StyleSheet.absoluteFill}>
           <Group transform={transform}>

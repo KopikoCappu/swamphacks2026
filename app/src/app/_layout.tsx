@@ -1,5 +1,6 @@
 import { Caveat_600SemiBold, useFonts } from '@expo-google-fonts/caveat';
-import { Stack } from 'expo-router';
+import { OpenDyslexic}
+
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -14,7 +15,7 @@ export default function RootLayout() {
   if (!loaded) return null;
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
+    <GestureHandlerRootView testID="app-gesture-handler-root-view" style={{ flex: 1 }}>
       <Stack screenOptions={{ headerShown: false, animation: 'fade' }} />
     </GestureHandlerRootView>
   );

@@ -79,10 +79,10 @@ export function TopBar({
 	const { setTool, updatePage } = useStore.getState();
 
 	return (
-		<View style={styles.topBar}>
-			<View style={styles.left}>
+		<View testID="toolbar-top-bar" style={styles.topBar}>
+			<View testID="toolbar-left" style={styles.left}>
 				<IconBtn icon="chevron-left" onPress={() => router.back()} />
-				<TextInput
+				<TextInput testID="toolbar-title"
 					value={title}
 					onChangeText={(t) => updatePage(pageId, () => ({ title: t }))}
 					placeholder="Untitled"
@@ -91,7 +91,7 @@ export function TopBar({
 				/>
 			</View>
 
-			<View style={styles.right}>
+			<View testID="toolbar-right" style={styles.right}>
 				{TOOLS.map((t) => (
 					<IconBtn
 						key={t.id}
@@ -100,20 +100,20 @@ export function TopBar({
 						onPress={() => setTool(t.id)}
 					/>
 				))}
-				<Pressable
+				<Pressable testID="toolbar-color-btn"
 					onPress={() => setMenu(menu === "color" ? null : "color")}
 					style={styles.colorBtn}
 					hitSlop={6}
 				>
-					<View style={[styles.colorDot, { backgroundColor: color }]} />
+					<View testID="toolbar-color-dot" style={[styles.colorDot, { backgroundColor: color }]} />
 				</Pressable>
-				<View style={styles.divider} />
+				<View testID="toolbar-divider" style={styles.divider} />
 				<IconBtn
 					icon="dots-horizontal"
 					active={menu === "more"}
 					onPress={() => setMenu(menu === "more" ? null : "more")}
 				/>
-				<Pressable
+				<Pressable testID="toolbar-ask-btn"
 					onPress={onToggleAgent}
 					style={[styles.askBtn, agentOpen && { opacity: 0.85 }]}
 				>
@@ -122,7 +122,7 @@ export function TopBar({
 						size={16}
 						color={C.onPrimary}
 					/>
-					<Text style={styles.askText}>Ask</Text>
+					<Text testID="toolbar-ask-text" style={styles.askText}>Ask</Text>
 				</Pressable>
 			</View>
 		</View>
@@ -150,9 +150,9 @@ export function SideControls({ pageId }: { pageId: string }) {
 				: null;
 
 	return (
-		<View style={styles.rail} pointerEvents="box-none">
+		<View testID="toolbar-rail" style={styles.rail} pointerEvents="box-none">
 			{tool === "shape" && (
-				<View style={[styles.railCard, shadow]}>
+				<View testID="toolbar-rail-card" style={[styles.railCard, shadow]}>
 					{SHAPES.map((sh) => (
 						<IconBtn
 							key={sh.id}
@@ -165,7 +165,7 @@ export function SideControls({ pageId }: { pageId: string }) {
 				</View>
 			)}
 			{sized && (
-				<View style={[styles.railCard, shadow]}>
+				<View testID="toolbar-rail-card" style={[styles.railCard, shadow]}>
 					{[...SIZE_OPTIONS[sized]].reverse().map((size) => {
 						const d = Math.min(
 							22,
@@ -173,12 +173,12 @@ export function SideControls({ pageId }: { pageId: string }) {
 						);
 						const active = sizes[sized] === size;
 						return (
-							<Pressable
+							<Pressable testID="toolbar-size-btn"
 								key={size}
 								onPress={() => setSize(sized, size)}
 								style={styles.sizeBtn}
 							>
-								<View
+								<View testID="toolbar-view"
 									style={[
 										{ width: d, height: d, borderRadius: d / 2 },
 										sized === "eraser"
@@ -194,7 +194,7 @@ export function SideControls({ pageId }: { pageId: string }) {
 					})}
 				</View>
 			)}
-			<View style={[styles.railCard, shadow]}>
+			<View testID="toolbar-rail-card" style={[styles.railCard, shadow]}>
 				<IconBtn
 					icon="undo"
 					onPress={() => undoPage(pageId)}
@@ -222,11 +222,11 @@ export function ColorMenu() {
 	const current = hl ? highlighterColor : color;
 
 	return (
-		<View style={[styles.popover, shadow, { right: 150, width: 228 }]}>
-			<Text style={styles.popLabel}>{hl ? "Highlighter" : "Ink"}</Text>
-			<View style={styles.swatches}>
+		<View testID="toolbar-popover" style={[styles.popover, shadow, { right: 150, width: 228 }]}>
+			<Text testID="toolbar-pop-label" style={styles.popLabel}>{hl ? "Highlighter" : "Ink"}</Text>
+			<View testID="toolbar-swatches" style={styles.swatches}>
 				{colors.map((c) => (
-					<Pressable
+					<Pressable testID="toolbar-swatch-ring"
 						key={c}
 						onPress={() => (hl ? setHighlighterColor(c) : setColor(c))}
 						style={[
@@ -234,7 +234,7 @@ export function ColorMenu() {
 							current === c && { borderColor: C.text },
 						]}
 					>
-						<View style={[styles.swatch, { backgroundColor: c }]} />
+						<View testID="toolbar-swatch" style={[styles.swatch, { backgroundColor: c }]} />
 					</Pressable>
 				))}
 			</View>
@@ -279,11 +279,11 @@ export function MoreMenu({
 	}
 
 	return (
-		<View style={[styles.popover, shadow, { right: 76, width: 300 }]}>
-			<Text style={styles.popLabel}>Paper</Text>
-			<View style={styles.paperRow}>
+		<View testID="toolbar-popover" style={[styles.popover, shadow, { right: 76, width: 300 }]}>
+			<Text testID="toolbar-pop-label" style={styles.popLabel}>Paper</Text>
+			<View testID="toolbar-paper-row" style={styles.paperRow}>
 				{PAPERS.map((p) => (
-					<Pressable
+					<Pressable testID="toolbar-paper-btn"
 						key={p.id}
 						onPress={() => updatePage(pageId, () => ({ paper: p.id }))}
 						style={[styles.paperBtn, paper === p.id && styles.paperActive]}
@@ -293,7 +293,7 @@ export function MoreMenu({
 							size={20}
 							color={paper === p.id ? C.text : C.muted}
 						/>
-						<Text
+						<Text testID="toolbar-paper-text"
 							style={[styles.paperText, paper === p.id && { color: C.text }]}
 						>
 							{p.label}
@@ -302,23 +302,23 @@ export function MoreMenu({
 				))}
 			</View>
 
-			<Text style={[styles.popLabel, { marginTop: 12 }]}>Page color</Text>
-			<View style={styles.paperRow}>
+			<Text testID="toolbar-pop-label" style={[styles.popLabel, { marginTop: 12 }]}>Page color</Text>
+			<View testID="toolbar-paper-row" style={styles.paperRow}>
 				{PAGE_COLORS.map((c) => (
-					<Pressable
+					<Pressable testID="toolbar-paper-btn"
 						key={c.id}
 						onPress={() => updatePage(pageId, () => ({ bg: c.id }))}
 						style={[styles.paperBtn, bg === c.id && styles.paperActive]}
 					>
-						<View style={[styles.pageSwatch, { backgroundColor: c.id }]} />
-						<Text style={[styles.paperText, bg === c.id && { color: C.text }]}>
+						<View testID="toolbar-page-swatch" style={[styles.pageSwatch, { backgroundColor: c.id }]} />
+						<Text testID="toolbar-paper-text" style={[styles.paperText, bg === c.id && { color: C.text }]}>
 							{c.label}
 						</Text>
 					</Pressable>
 				))}
 			</View>
 
-			<View style={styles.sep} />
+			<View testID="toolbar-sep" style={styles.sep} />
 			<Row
 				icon="image-outline"
 				label="Insert photo"
@@ -352,7 +352,7 @@ export function MoreMenu({
 				/>
 			)}
 
-			<View style={styles.sep} />
+			<View testID="toolbar-sep" style={styles.sep} />
 			{hasAiInk && (
 				<Row
 					icon="broom"
@@ -390,10 +390,10 @@ export function ZoomPill({
 		zoomAt(viewport, viewport.scale.get() * f, ...getCenter());
 
 	return (
-		<View style={[styles.zoom, shadow]}>
+		<View testID="toolbar-zoom" style={[styles.zoom, shadow]}>
 			<IconBtn icon="minus" onPress={() => step(1 / 1.25)} size={18} />
-			<Pressable onPress={() => resetViewport(viewport)} hitSlop={4}>
-				<Text style={styles.zoomText}>{pct}%</Text>
+			<Pressable testID="toolbar-pressable" onPress={() => resetViewport(viewport)} hitSlop={4}>
+				<Text testID="toolbar-zoom-text" style={styles.zoomText}>{pct}%</Text>
 			</Pressable>
 			<IconBtn icon="plus" onPress={() => step(1.25)} size={18} />
 		</View>
@@ -416,7 +416,7 @@ export function IconBtn({
 	size?: number;
 }) {
 	return (
-		<Pressable
+		<Pressable testID="toolbar-icon-btn"
 			onPress={onPress}
 			disabled={disabled}
 			hitSlop={4}
@@ -449,7 +449,7 @@ function Row({
 	right?: React.ReactNode;
 }) {
 	return (
-		<Pressable
+		<Pressable testID="toolbar-row"
 			onPress={onPress}
 			style={({ pressed }) => [
 				styles.row,
@@ -461,7 +461,7 @@ function Row({
 				size={20}
 				color={danger ? C.danger : C.icon}
 			/>
-			<Text style={[styles.rowText, danger && { color: C.danger }]}>
+			<Text testID="toolbar-row-text" style={[styles.rowText, danger && { color: C.danger }]}>
 				{label}
 			</Text>
 			{right}
@@ -471,8 +471,8 @@ function Row({
 
 function Toggle({ on }: { on: boolean }) {
 	return (
-		<View style={[styles.toggle, on && { backgroundColor: C.text }]}>
-			<View style={[styles.knob, on && { transform: [{ translateX: 14 }] }]} />
+		<View testID="toolbar-toggle" style={[styles.toggle, on && { backgroundColor: C.text }]}>
+			<View testID="toolbar-knob" style={[styles.knob, on && { transform: [{ translateX: 14 }] }]} />
 		</View>
 	);
 }

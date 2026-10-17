@@ -52,11 +52,11 @@ export default function NotesHome() {
 	}
 
 	return (
-		<SafeAreaView style={styles.root}>
+		<SafeAreaView testID="notes-home-root" style={styles.root}>
 			<Stack.Screen options={{ headerShown: false }} />
-			<View style={styles.sidebar}>
-				<Text style={styles.brand}>InkBuddy</Text>
-				<ScrollView contentContainerStyle={{ gap: 2 }}>
+			<View testID="notes-home-sidebar" style={styles.sidebar}>
+				<Text testID="notes-home-brand" style={styles.brand}>InkBuddy</Text>
+				<ScrollView testID="notes-home-scroll-view" contentContainerStyle={{ gap: 2 }}>
 					<SideItem
 						icon="note-multiple-outline"
 						label="All notes"
@@ -64,7 +64,7 @@ export default function NotesHome() {
 						active={current === ALL}
 						onPress={() => setCurrent(ALL)}
 					/>
-					<Text style={styles.sideLabel}>Folders</Text>
+					<Text testID="notes-home-side-label" style={styles.sideLabel}>Folders</Text>
 					{folderList.map((f) => (
 						<FolderItem
 							key={f.id}
@@ -79,7 +79,7 @@ export default function NotesHome() {
 							onDoneRename={() => setRenaming(null)}
 						/>
 					))}
-					<Pressable
+					<Pressable testID="notes-home-side-item"
 						onPress={newFolder}
 						style={({ pressed }) => [
 							styles.sideItem,
@@ -91,22 +91,22 @@ export default function NotesHome() {
 							size={18}
 							color={C.muted}
 						/>
-						<Text style={[styles.sideText, { color: C.muted }]}>
+						<Text testID="notes-home-side-text" style={[styles.sideText, { color: C.muted }]}>
 							New folder
 						</Text>
 					</Pressable>
 				</ScrollView>
 			</View>
 
-			<View
+			<View testID="notes-home-main"
 				style={styles.main}
 				onLayout={(e) => setMainWidth(e.nativeEvent.layout.width)}
 			>
-				<View style={styles.header}>
-					<Text style={styles.h1} numberOfLines={1}>
+				<View testID="notes-home-header" style={styles.header}>
+					<Text testID="notes-home-h1" style={styles.h1} numberOfLines={1}>
 						{heading}
 					</Text>
-					<Pressable
+					<Pressable testID="notes-home-new-btn"
 						style={styles.newBtn}
 						onPress={() =>
 							router.push(
@@ -115,12 +115,12 @@ export default function NotesHome() {
 						}
 					>
 						<MaterialCommunityIcons name="plus" size={18} color={C.onPrimary} />
-						<Text style={styles.newText}>New note</Text>
+						<Text testID="notes-home-new-text" style={styles.newText}>New note</Text>
 					</Pressable>
 				</View>
 
 				{mainWidth > 0 && (
-					<FlatList
+					<FlatList testID="notes-home-flat-list"
 						data={list}
 						key={`cols-${cols}`}
 						numColumns={cols}
@@ -132,7 +132,7 @@ export default function NotesHome() {
 							paddingBottom: 48,
 						}}
 						ListEmptyComponent={
-							<Text style={styles.empty}>
+							<Text testID="notes-home-empty" style={styles.empty}>
 								{current === ALL ? "No notes yet." : "This folder is empty."}
 							</Text>
 						}
@@ -166,7 +166,7 @@ function SideItem({
 	onPress: () => void;
 }) {
 	return (
-		<Pressable
+		<Pressable testID="notes-home-side-item"
 			onPress={onPress}
 			style={({ pressed }) => [
 				styles.sideItem,
@@ -178,13 +178,13 @@ function SideItem({
 				size={18}
 				color={active ? C.text : C.icon}
 			/>
-			<Text
+			<Text testID="notes-home-side-text"
 				style={[styles.sideText, active && { fontWeight: "600" }]}
 				numberOfLines={1}
 			>
 				{label}
 			</Text>
-			<Text style={styles.count}>{count}</Text>
+			<Text testID="notes-home-count" style={styles.count}>{count}</Text>
 		</Pressable>
 	);
 }
@@ -219,13 +219,13 @@ function FolderItem({
 
 	if (renaming) {
 		return (
-			<View style={[styles.sideItem, { backgroundColor: C.selected }]}>
+			<View testID="notes-home-side-item" style={[styles.sideItem, { backgroundColor: C.selected }]}>
 				<MaterialCommunityIcons
 					name="folder-outline"
 					size={18}
 					color={C.text}
 				/>
-				<TextInput
+				<TextInput testID="notes-home-side-text"
 					value={name}
 					onChangeText={setName}
 					autoFocus
@@ -245,7 +245,7 @@ function FolderItem({
 	}
 
 	return (
-		<Pressable
+		<Pressable testID="notes-home-side-item"
 			onPress={onPress}
 			style={({ pressed }) => [
 				styles.sideItem,
@@ -257,14 +257,14 @@ function FolderItem({
 				size={18}
 				color={active ? C.text : C.icon}
 			/>
-			<Text
+			<Text testID="notes-home-side-text"
 				style={[styles.sideText, active && { fontWeight: "600" }]}
 				numberOfLines={1}
 			>
 				{folder.name}
 			</Text>
 			{active ? (
-				<View style={{ flexDirection: "row" }}>
+				<View testID="notes-home-view" style={{ flexDirection: "row" }}>
 					<SmallIcon icon="pencil-outline" onPress={onRename} />
 					<SmallIcon
 						icon={confirm ? "check" : "delete-outline"}
@@ -275,7 +275,7 @@ function FolderItem({
 					/>
 				</View>
 			) : (
-				<Text style={styles.count}>{count}</Text>
+				<Text testID="notes-home-count" style={styles.count}>{count}</Text>
 			)}
 		</Pressable>
 	);
@@ -299,21 +299,21 @@ function NoteCard({
 	const { movePage } = useStore.getState();
 
 	return (
-		<View style={{ width, zIndex: menuOpen ? 10 : 0 }}>
-			<Pressable
+		<View testID="notes-home-view" style={{ width, zIndex: menuOpen ? 10 : 0 }}>
+			<Pressable testID="notes-home-pressable"
 				onPress={() => router.push(`/note/${page.id}`)}
 				onLongPress={() => setMenuOpen(true)}
 			>
-				<View style={[styles.card, shadow]}>
+				<View testID="notes-home-card" style={[styles.card, shadow]}>
 					<NoteThumb page={page} />
 				</View>
 			</Pressable>
-			<View style={styles.cardMeta}>
-				<View style={{ flex: 1 }}>
-					<Text style={styles.title} numberOfLines={1}>
+			<View testID="notes-home-card-meta" style={styles.cardMeta}>
+				<View testID="notes-home-view" style={{ flex: 1 }}>
+					<Text testID="notes-home-title" style={styles.title} numberOfLines={1}>
 						{page.title || "Untitled"}
 					</Text>
-					<Text style={styles.meta}>
+					<Text testID="notes-home-meta" style={styles.meta}>
 						{new Date(page.updatedAt).toLocaleDateString(undefined, {
 							month: "short",
 							day: "numeric",
@@ -329,8 +329,8 @@ function NoteCard({
 			</View>
 
 			{menuOpen && (
-				<View style={[styles.cardMenu, shadow]}>
-					<Text style={styles.menuLabel}>Move to</Text>
+				<View testID="notes-home-card-menu" style={[styles.cardMenu, shadow]}>
+					<Text testID="notes-home-menu-label" style={styles.menuLabel}>Move to</Text>
 					<MenuRow
 						icon="inbox-outline"
 						label="No folder"
@@ -346,7 +346,7 @@ function NoteCard({
 							onPress={() => (movePage(page.id, f.id), setMenuOpen(false))}
 						/>
 					))}
-					<View style={styles.sep} />
+					<View testID="notes-home-sep" style={styles.sep} />
 					<DeleteRow pageId={page.id} />
 				</View>
 			)}
@@ -383,7 +383,7 @@ function MenuRow({
 	danger?: boolean;
 }) {
 	return (
-		<Pressable
+		<Pressable testID="notes-home-menu-row"
 			onPress={onPress}
 			style={({ pressed }) => [
 				styles.menuRow,
@@ -395,7 +395,7 @@ function MenuRow({
 				size={18}
 				color={danger ? C.danger : C.icon}
 			/>
-			<Text
+			<Text testID="notes-home-menu-text"
 				style={[styles.menuText, danger && { color: C.danger }]}
 				numberOfLines={1}
 			>
@@ -418,7 +418,7 @@ function SmallIcon({
 	danger?: boolean;
 }) {
 	return (
-		<Pressable onPress={onPress} hitSlop={6} style={styles.smallIcon}>
+		<Pressable testID="notes-home-small-icon" onPress={onPress} hitSlop={6} style={styles.smallIcon}>
 			<MaterialCommunityIcons
 				name={icon}
 				size={16}

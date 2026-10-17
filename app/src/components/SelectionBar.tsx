@@ -81,11 +81,11 @@ export function SelectionBar({ pageId, selection, viewport, include, setInclude,
   }
 
   return (
-    <Animated.View style={[styles.wrap, pos]}>
-      <View style={[styles.bar, shadow]}>
-        <Pressable style={styles.ask} onPress={onAsk}>
+    <Animated.View testID="selection-bar-wrap" style={[styles.wrap, pos]}>
+      <View testID="selection-bar-bar" style={[styles.bar, shadow]}>
+        <Pressable testID="selection-bar-ask" style={styles.ask} onPress={onAsk}>
           <MaterialCommunityIcons name="creation" size={15} color={C.onPrimary} />
-          <Text style={styles.askText}>Ask</Text>
+          <Text testID="selection-bar-ask-text" style={styles.askText}>Ask</Text>
         </Pressable>
 
         {/* What the AI receives from this selection */}
@@ -93,7 +93,7 @@ export function SelectionBar({ pageId, selection, viewport, include, setInclude,
         {hasImages && <Toggle icon="image-outline" label="Image" on={include.images} onPress={() => setInclude({ ...include, images: !include.images })} />}
         {hasText && <Toggle icon="format-text" label="Text" on={include.text} onPress={() => setInclude({ ...include, text: !include.text })} />}
 
-        <View style={styles.divider} />
+        <View testID="selection-bar-divider" style={styles.divider} />
         <Action icon="content-copy" onPress={duplicate} />
         {hasInk && <Action icon="palette-outline" onPress={recolor} />}
         {hasImages && (
@@ -111,16 +111,16 @@ export function SelectionBar({ pageId, selection, viewport, include, setInclude,
 
 function Toggle({ icon, label, on, onPress }: { icon: IconName; label: string; on: boolean; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} hitSlop={4} style={[styles.toggle, on && styles.toggleOn]}>
+    <Pressable testID="selection-bar-toggle" onPress={onPress} hitSlop={4} style={[styles.toggle, on && styles.toggleOn]}>
       <MaterialCommunityIcons name={icon} size={15} color={on ? C.text : C.faint} />
-      <Text style={[styles.toggleText, !on && { color: C.faint, textDecorationLine: 'line-through' }]}>{label}</Text>
+      <Text testID="selection-bar-toggle-text" style={[styles.toggleText, !on && { color: C.faint, textDecorationLine: 'line-through' }]}>{label}</Text>
     </Pressable>
   );
 }
 
 function Action({ icon, onPress, danger }: { icon: IconName; onPress: () => void; danger?: boolean }) {
   return (
-    <Pressable onPress={onPress} hitSlop={4} style={({ pressed }) => [styles.action, pressed && { backgroundColor: C.selected }]}>
+    <Pressable testID="selection-bar-action" onPress={onPress} hitSlop={4} style={({ pressed }) => [styles.action, pressed && { backgroundColor: C.selected }]}>
       <MaterialCommunityIcons name={icon} size={19} color={danger ? C.danger : C.icon} />
     </Pressable>
   );

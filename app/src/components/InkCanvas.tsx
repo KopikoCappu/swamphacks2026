@@ -478,13 +478,13 @@ export function InkCanvas({
 		xf && ids?.includes(id) ? xf : IDENTITY;
 
 	return (
-		<View
+		<View testID="ink-canvas-root"
 			ref={rootRef}
 			style={[styles.root, { backgroundColor: bg }]}
 			onLayout={(e) => setCanvasSize(e.nativeEvent.layout)}
 		>
 			<GestureDetector gesture={gesture}>
-				<View style={StyleSheet.absoluteFill} collapsable={false}>
+				<View testID="ink-canvas-view" style={StyleSheet.absoluteFill} collapsable={false}>
 					<Canvas style={StyleSheet.absoluteFill}>
 						<Group transform={transform}>
 							<PaperBackground
@@ -611,12 +611,12 @@ export function InkCanvas({
 			</GestureDetector>
 
 			{/* Typed text blocks: editable only with the text tool so drawing over them still works */}
-			<Animated.View
+			<Animated.View testID="ink-canvas-layer"
 				style={[styles.layer, overlayStyle]}
 				pointerEvents={tool === "text" ? "box-none" : "none"}
 			>
 				{page.texts.map((t) => (
-					<TextInput
+					<TextInput testID="ink-canvas-text-block"
 						key={t.id}
 						value={t.text}
 						multiline
@@ -645,9 +645,9 @@ export function InkCanvas({
 			</Animated.View>
 
 			{/* Equations (KaTeX on web). Their measured size feeds hit-testing, lasso and AI placement. */}
-			<Animated.View style={[styles.layer, overlayStyle]} pointerEvents="none">
+			<Animated.View testID="ink-canvas-layer" style={[styles.layer, overlayStyle]} pointerEvents="none">
 				{(page.maths ?? []).map((m) => (
-					<View
+					<View testID="ink-canvas-math"
 						key={m.id}
 						style={[
 							styles.math,
@@ -680,7 +680,7 @@ export function InkCanvas({
 			</Animated.View>
 
 			{/* AI margin notes in handwriting font */}
-			<Animated.View style={[styles.layer, overlayStyle]} pointerEvents="none">
+			<Animated.View testID="ink-canvas-layer" style={[styles.layer, overlayStyle]} pointerEvents="none">
 				{page.annotations
 					.filter((a) => a.kind === "note" && a.text)
 					.map((a) => (
@@ -772,7 +772,7 @@ function AnnotationStroke({ a }: { a: Annotation }) {
 function AiNote({ a }: { a: Annotation }) {
 	const delay = useAppearDelay(a);
 	return (
-		<Animated.Text
+		<Animated.Text testID="ink-canvas-note"
 			entering={delay === null ? undefined : FadeIn.delay(delay).duration(600)}
 			style={[
 				styles.note,

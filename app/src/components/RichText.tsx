@@ -9,7 +9,7 @@ export type RichTextProps = { text: string; color?: string };
  */
 export function RichText({ text, color }: RichTextProps) {
   const plain = text.replace(/\$\$?([^$]+)\$\$?/g, '$1');
-  return <Text style={[styles.text, color ? { color } : null]}>{plain}</Text>;
+  return <Text testID="rich-text-text" style={[styles.text, color ? { color } : null]}>{plain}</Text>;
 }
 
 const styles = StyleSheet.create({ text: { fontSize: 15, lineHeight: 22, color: C.text } });

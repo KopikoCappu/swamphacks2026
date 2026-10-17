@@ -193,24 +193,24 @@ export function AgentPanel({
 	const canSend = !busy && (!!input.trim() || chips.length > 0);
 
 	return (
-		<View style={styles.panel}>
-			<View style={styles.header}>
-				<View style={styles.titleRow}>
+		<View testID="agent-panel-panel" style={styles.panel}>
+			<View testID="agent-panel-header" style={styles.header}>
+				<View testID="agent-panel-title-row" style={styles.titleRow}>
 					<MaterialCommunityIcons name="creation" size={18} color={C.text} />
-					<Text style={styles.titleText}>Claude</Text>
+					<Text testID="agent-panel-title-text" style={styles.titleText}>Claude</Text>
 				</View>
 				<IconBtn icon="close" onPress={onClose} />
 			</View>
 
-			<ScrollView
+			<ScrollView testID="agent-panel-scroll-view"
 				ref={scroll}
 				style={{ flex: 1 }}
 				contentContainerStyle={{ padding: 16, gap: 14 }}
 			>
 				{chat.length === 0 && (
-					<View style={styles.empty}>
+					<View testID="agent-panel-empty" style={styles.empty}>
 						<MaterialCommunityIcons name="lasso" size={28} color={C.faint} />
-						<Text style={styles.emptyText}>
+						<Text testID="agent-panel-empty-text" style={styles.emptyText}>
 							Ask anything — Claude can see your screen and write on the page.
 							Lasso something first to point at it.
 						</Text>
@@ -218,28 +218,28 @@ export function AgentPanel({
 				)}
 				{chat.map((m) =>
 					m.role === "user" ? (
-						<View key={m.id} style={styles.userMsg}>
+						<View testID="agent-panel-user-msg" key={m.id} style={styles.userMsg}>
 							{m.chips?.map((c) => (
 								<ChipPreview key={c.id} chip={c} />
 							))}
-							{!!m.text && <Text style={styles.msgText}>{m.text}</Text>}
+							{!!m.text && <Text testID="agent-panel-msg-text" style={styles.msgText}>{m.text}</Text>}
 						</View>
 					) : (
-						<View key={m.id} style={styles.aiMsg}>
+						<View testID="agent-panel-ai-msg" key={m.id} style={styles.aiMsg}>
 							{m.error ? (
-								<Text style={[styles.msgText, { color: C.danger }]}>
+								<Text testID="agent-panel-msg-text" style={[styles.msgText, { color: C.danger }]}>
 									{m.text}
 								</Text>
 							) : (
 								<RichText text={m.text} />
 							)}
 							{!!m.transcription && (
-								<View style={styles.transcript}>
+								<View testID="agent-panel-transcript" style={styles.transcript}>
 									<RichText text={m.transcription} />
 								</View>
 							)}
 							{!m.error && (
-								<View style={styles.msgActions}>
+								<View testID="agent-panel-msg-actions" style={styles.msgActions}>
 									<Action
 										icon="pin-outline"
 										label="Pin to page"
@@ -258,24 +258,24 @@ export function AgentPanel({
 					),
 				)}
 				{busy && (
-					<ActivityIndicator
+					<ActivityIndicator testID="agent-panel-activity-indicator"
 						color={C.muted}
 						style={{ alignSelf: "flex-start" }}
 					/>
 				)}
 			</ScrollView>
 
-			<View style={styles.composer}>
+			<View testID="agent-panel-composer" style={styles.composer}>
 				{chips.length > 0 && (
-					<ScrollView
+					<ScrollView testID="agent-panel-scroll-view"
 						horizontal
 						contentContainerStyle={{ gap: 8, paddingBottom: 10 }}
 						style={{ flexGrow: 0 }}
 					>
 						{chips.map((c) => (
-							<View key={c.id}>
+							<View testID="agent-panel-view" key={c.id}>
 								<ChipPreview chip={c} small />
-								<Pressable
+								<Pressable testID="agent-panel-chip-x"
 									style={styles.chipX}
 									onPress={() => setChips(chips.filter((x) => x.id !== c.id))}
 									hitSlop={6}
@@ -291,8 +291,8 @@ export function AgentPanel({
 					</ScrollView>
 				)}
 
-				<View style={styles.quick}>
-					<Pressable
+				<View testID="agent-panel-quick" style={styles.quick}>
+					<Pressable testID="agent-panel-quick-btn"
 						disabled={busy}
 						onPress={onAttachPage}
 						style={({ pressed }) => [
@@ -306,10 +306,10 @@ export function AgentPanel({
 							size={15}
 							color={C.icon}
 						/>
-						<Text style={styles.quickText}>Whole page</Text>
+						<Text testID="agent-panel-quick-text" style={styles.quickText}>Whole page</Text>
 					</Pressable>
 					{QUICK.map((q) => (
-						<Pressable
+						<Pressable testID="agent-panel-quick-btn"
 							key={q.mode}
 							disabled={busy}
 							onPress={() => send(q.mode, input || q.prompt)}
@@ -320,13 +320,13 @@ export function AgentPanel({
 							]}
 						>
 							<MaterialCommunityIcons name={q.icon} size={15} color={C.icon} />
-							<Text style={styles.quickText}>{q.label}</Text>
+							<Text testID="agent-panel-quick-text" style={styles.quickText}>{q.label}</Text>
 						</Pressable>
 					))}
 				</View>
 
-				<View style={styles.inputRow}>
-					<TextInput
+				<View testID="agent-panel-input-row" style={styles.inputRow}>
+					<TextInput testID="agent-panel-input"
 						style={styles.input}
 						value={input}
 						onChangeText={setInput}
@@ -336,7 +336,7 @@ export function AgentPanel({
 						placeholderTextColor={C.muted}
 						multiline
 					/>
-					<Pressable
+					<Pressable testID="agent-panel-send"
 						style={[styles.send, !canSend && { opacity: 0.25 }]}
 						onPress={() => send("ask", input)}
 						disabled={!canSend}
@@ -363,12 +363,12 @@ function ChipPreview({ chip, small }: { chip: Chip; small?: boolean }) {
 		chip.combined,
 	].filter((x): x is NonNullable<typeof x> => !!x);
 	return (
-		<View style={styles.chip}>
-			{!!chip.label && <Text style={styles.chipLabel}>{chip.label}</Text>}
+		<View testID="agent-panel-chip" style={styles.chip}>
+			{!!chip.label && <Text testID="agent-panel-chip-label" style={styles.chipLabel}>{chip.label}</Text>}
 			{layers.length > 0 && (
-				<View style={styles.chipLayers}>
+				<View testID="agent-panel-chip-layers" style={styles.chipLayers}>
 					{layers.map((img, i) => (
-						<Image
+						<Image testID="agent-panel-image"
 							key={i}
 							source={{
 								uri: `data:${img.mime ?? "image/png"};base64,${img.base64}`,
@@ -387,7 +387,7 @@ function ChipPreview({ chip, small }: { chip: Chip; small?: boolean }) {
 				</View>
 			)}
 			{!!chip.text && (
-				<Text numberOfLines={small ? 2 : 6} style={styles.chipText}>
+				<Text testID="agent-panel-chip-text" numberOfLines={small ? 2 : 6} style={styles.chipText}>
 					{chip.text}
 				</Text>
 			)}
@@ -405,13 +405,13 @@ function Action({
 	onPress: () => void;
 }) {
 	return (
-		<Pressable
+		<Pressable testID="agent-panel-action"
 			onPress={onPress}
 			hitSlop={6}
 			style={({ pressed }) => [styles.action, pressed && { opacity: 0.5 }]}
 		>
 			<MaterialCommunityIcons name={icon} size={14} color={C.muted} />
-			<Text style={styles.actionText}>{label}</Text>
+			<Text testID="agent-panel-action-text" style={styles.actionText}>{label}</Text>
 		</Pressable>
 	);
 }

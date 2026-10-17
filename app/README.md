@@ -54,3 +54,33 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Styling the web app
+
+Edit **`app/src/styles/global.css`**. It is imported once in `app/index.web.js`, so rules apply across all web routes without importing CSS into each page. Existing Markdown/KaTeX styles live there too.
+
+Pages and React Native UI elements expose stable `data-testid` selectors in the browser. Find their `testID` props in the source, or inspect an element in browser DevTools. Names follow `<component>-<style-name>`, for example:
+
+```css
+/* Notes page heading */
+[data-testid="notes-home-brand"] {
+  font-size: 28px !important;
+}
+
+/* Every instance of a toolbar button */
+[data-testid="toolbar-icon-btn"] {
+  border-radius: 12px !important;
+}
+
+/* AI chat text, including rendered Markdown */
+[data-testid^="agent-panel-"] {
+  font-family: Georgia, serif !important;
+}
+.ib-rich {
+  font-family: Georgia, serif;
+}
+```
+
+Use `!important` to override existing inline React Native properties. Target text elements directly for fonts/colors because React Native text does not always inherit them from its container. `.ib-rich` targets rendered Markdown and `.ib-math` targets rendered equations. Repeated elements share selectors, so one rule styles every instance. For new UI, add a descriptive `testID="my-component-label"` to its React Native element, then style `[data-testid="my-component-label"]` here; DOM elements can use `className` normally.
+
+CSS affects **web only**. Native iOS/Android styling stays in `StyleSheet` and `app/src/lib/theme.ts`. Skia canvas contents (ink, paper lines, previews, selection graphics) are drawn pixels/vectors, not DOM elements: customize those through component props, the note's paper/background controls, or drawing code. CSS can style the canvas container and text overlays.
