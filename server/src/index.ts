@@ -50,8 +50,13 @@ if (existsSync(webDist)) {
   });
 }
 
-const port = Number(process.env.PORT ?? 8787);
-app.listen(port, () => {
-  console.log(`InkBuddy server on http://localhost:${port}`);
-  console.log(`Expose to the tablet with:  ngrok http ${port}`);
-});
+// On Vercel the exported app is served as a function; locally we listen on a port.
+if (!process.env.VERCEL) {
+  const port = Number(process.env.PORT ?? 8787);
+  app.listen(port, () => {
+    console.log(`InkBuddy server on http://localhost:${port}`);
+    console.log(`Expose to the tablet with:  ngrok http ${port}`);
+  });
+}
+
+export default app;

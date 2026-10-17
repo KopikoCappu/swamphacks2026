@@ -62,7 +62,12 @@ export function buildRequest(history: ChatMessage[], ctx: PageContext): { messag
     .filter((m) => !m.error)
     .map((m, i, all): WireMessage => {
       const parts = chipImages(m, { k: 0 });
-      if (i !== all.length - 1) return { role: m.role, text: chipText(m), images: parts.map((p) => p.img) };
+      // Only the newest message carries images (keeps requests under the host's 4.5 MB body limit);
+      // earlier turns keep their text so the conversation still makes sense.
+      if (i !== all.length - 1) {
+        const note = parts.length ? `\n\n(${parts.length} image${parts.length > 1 ? 's' : ''} I attached earlier, omitted)` : '';
+        return { role: m.role, text: (chipText(m) || '(see images)') + note };
+      }
 
       regions = parts.map((p) => p.region);
       const images = parts.map((p) => p.img);
