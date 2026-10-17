@@ -1,6 +1,6 @@
 import { Skia, type SkPath } from '@shopify/react-native-skia';
 import { getStroke } from 'perfect-freehand';
-import type { MathBlock, PageImage, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
+import type { MathBlock, Page, PageImage, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -91,11 +91,13 @@ export function snapTextTop(y: number) {
   const rule = Math.round(y / LINE_SPACING) * LINE_SPACING; // the canvas is infinite, so lines are too
   return rule - LINE_SPACING + 4;
 }
+export const TEXT_SIZE = 18;
+export const textLineHeight = (t: TextBlock) => ((t.size ?? TEXT_SIZE) / TEXT_SIZE) * TEXT_LINE_HEIGHT;
 export const textBounds = (t: TextBlock): Rect => ({
   x: t.x,
   y: t.y,
   w: t.width,
-  h: Math.max(1, t.text.split('\n').length) * TEXT_LINE_HEIGHT + 8,
+  h: Math.max(1, t.text.split('\n').length) * textLineHeight(t) + 8,
 });
 
 /** Everything mostly inside the lasso polygon. */
@@ -119,7 +121,7 @@ export function selectWithLasso(
     .map((s) => s.id);
   const center = (r: Rect) => [r.x + r.w / 2, r.y + r.h / 2] as const;
   const textIds = texts.filter((t) => pointInPolygon(...center(textBounds(t)), lasso)).map((t) => t.id);
-  const imageIds = images.filter((im) => pointInPolygon(...center(im), lasso)).map((i) => i.id);
+  const imageIds = images.filter((im) => !im.locked && pointInPolygon(...center(im), lasso)).map((i) => i.id);
   const mathIds = maths.filter((m) => pointInPolygon(...center(mathBounds(m)), lasso)).map((m) => m.id);
 
   const rects = [
@@ -181,4 +183,98 @@ export function shapePoints(kind: ShapeKind, x0: number, y0: number, x1: number,
       return densify(pts);
     }
   }
+}
+
+// ---------- Selection: tap-select, bounds, move/resize ----------
+
+const EMPTY_SEL = { strokeIds: [], textIds: [], mathIds: [], imageIds: [] };
+
+/** Bounds of everything in a selection (null if it's empty). */
+export function selectionBounds(page: Page, sel: Omit<Selection, 'bounds'>): Rect | null {
+  return unionRects([
+    ...page.strokes.filter((s) => sel.strokeIds.includes(s.id)).map(strokeBounds),
+    ...page.texts.filter((t) => sel.textIds.includes(t.id)).map(textBounds),
+    ...(page.maths ?? []).filter((m) => sel.mathIds.includes(m.id)).map(mathBounds),
+    ...page.images.filter((i) => sel.imageIds.includes(i.id)),
+  ]);
+}
+
+export function makeSelection(page: Page, ids: Partial<Omit<Selection, 'bounds'>>): Selection | null {
+  const sel = { ...EMPTY_SEL, ...ids };
+  const bounds = selectionBounds(page, sel);
+  return bounds ? { ...sel, bounds } : null;
+}
+
+/** Topmost single object under a tap (equation > text > ink > image). Locked images are ignored. */
+export function hitTest(page: Page, x: number, y: number, tolerance: number): Selection | null {
+  const math = [...(page.maths ?? [])].reverse().find((m) => rectContains(mathBounds(m), x, y));
+  if (math) return makeSelection(page, { mathIds: [math.id] });
+  const text = [...page.texts].reverse().find((t) => rectContains(textBounds(t), x, y));
+  if (text) return makeSelection(page, { textIds: [text.id] });
+  const stroke = strokesHitAt(page.strokes, x, y, tolerance).pop();
+  if (stroke) return makeSelection(page, { strokeIds: [stroke] });
+  const image = [...page.images].reverse().find((i) => !i.locked && rectContains(i, x, y));
+  if (image) return makeSelection(page, { imageIds: [image.id] });
+  return null;
+}
+
+/** Uniform scale `s` about anchor (ax, ay), then translate by (dx, dy). */
+export type Transform = { ax: number; ay: number; s: number; dx: number; dy: number };
+export const IDENTITY: Transform = { ax: 0, ay: 0, s: 1, dx: 0, dy: 0 };
+
+export const mapX = (t: Transform, x: number) => t.ax + (x - t.ax) * t.s + t.dx;
+export const mapY = (t: Transform, y: number) => t.ay + (y - t.ay) * t.s + t.dy;
+export const mapRect = (t: Transform, r: Rect): Rect => ({ x: mapX(t, r.x), y: mapY(t, r.y), w: r.w * t.s, h: r.h * t.s });
+
+/** Apply a move/resize to the selected items. Ink thickness, font size and equation size scale too. */
+export function transformSelection(page: Page, sel: Selection, t: Transform): Partial<Page> {
+  const has = (ids: string[], id: string) => ids.includes(id);
+  return {
+    strokes: page.strokes.map((s) =>
+      has(sel.strokeIds, s.id) ? { ...s, size: s.size * t.s, points: s.points.map(([x, y, p]) => [mapX(t, x), mapY(t, y), p] as Point) } : s,
+    ),
+    images: page.images.map((i) => (has(sel.imageIds, i.id) ? { ...i, ...mapRect(t, i) } : i)),
+    texts: page.texts.map((b) =>
+      has(sel.textIds, b.id) ? { ...b, x: mapX(t, b.x), y: mapY(t, b.y), width: b.width * t.s, size: (b.size ?? TEXT_SIZE) * t.s } : b,
+    ),
+    maths: (page.maths ?? []).map((m) => (has(sel.mathIds, m.id) ? { ...m, ...mapRect(t, mathBounds(m)), size: (m.size ?? 24) * t.s } : m)),
+  };
+}
+
+/** Copies of the selected items, offset a little. Returns the page changes and the ids of the copies. */
+export function duplicateSelection(page: Page, sel: Selection, offset = 24) {
+  const moved = transformSelection(page, sel, { ...IDENTITY, dx: offset, dy: offset });
+  const fresh = <T extends { id: string }>(items: T[], ids: string[]) => items.filter((i) => ids.includes(i.id)).map((i) => ({ ...i, id: uid() }));
+  const strokes = fresh(moved.strokes!, sel.strokeIds);
+  const images = fresh(moved.images!, sel.imageIds);
+  const texts = fresh(moved.texts!, sel.textIds);
+  const maths = fresh(moved.maths!, sel.mathIds);
+  return {
+    changes: {
+      strokes: [...page.strokes, ...strokes],
+      images: [...page.images, ...images],
+      texts: [...page.texts, ...texts],
+      maths: [...(page.maths ?? []), ...maths],
+    },
+    ids: { strokeIds: strokes.map((x) => x.id), imageIds: images.map((x) => x.id), textIds: texts.map((x) => x.id), mathIds: maths.map((x) => x.id) },
+  };
+}
+
+export function deleteSelection(page: Page, sel: Selection): Partial<Page> {
+  return {
+    strokes: page.strokes.filter((s) => !sel.strokeIds.includes(s.id)),
+    images: page.images.filter((i) => !sel.imageIds.includes(i.id)),
+    texts: page.texts.filter((t) => !sel.textIds.includes(t.id)),
+    maths: (page.maths ?? []).filter((m) => !sel.mathIds.includes(m.id)),
+  };
+}
+
+/** Everything on the page as one selection — for "Ask about the whole page". */
+export function selectAll(page: Page): Selection | null {
+  return makeSelection(page, {
+    strokeIds: page.strokes.map((s) => s.id),
+    textIds: page.texts.map((t) => t.id),
+    mathIds: (page.maths ?? []).map((m) => m.id),
+    imageIds: page.images.map((i) => i.id),
+  });
 }

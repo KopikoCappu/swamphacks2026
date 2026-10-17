@@ -19,12 +19,14 @@ export type Stroke = {
   stylus: boolean;
 };
 
-export type TextBlock = { id: string; x: number; y: number; width: number; text: string; color?: string };
+/** `size` is the font size (default 18); it scales when the block is resized. */
+export type TextBlock = { id: string; x: number; y: number; width: number; text: string; color?: string; size?: number };
 
 /** A rendered LaTeX equation on the page. w/h are an estimate used for hit-testing and selection. */
-export type MathBlock = { id: string; x: number; y: number; w: number; h: number; latex: string; color?: string };
+export type MathBlock = { id: string; x: number; y: number; w: number; h: number; latex: string; color?: string; size?: number };
 
-export type PageImage = { id: string; x: number; y: number; w: number; h: number; base64: string };
+/** `base64` is the stored (already downscaled) original; `mime` defaults to JPEG. Locked images act as a background. */
+export type PageImage = { id: string; x: number; y: number; w: number; h: number; base64: string; mime?: string; locked?: boolean };
 
 export type Rect = { x: number; y: number; w: number; h: number };
 
@@ -42,16 +44,30 @@ export type Annotation = {
   createdAt: number;
 };
 
-/** A piece of the page attached to an AI request. */
+export type ChipImage = { base64: string; width: number; height: number; mime?: string };
+
+/**
+ * A piece of the page attached to an AI request, split into layers so Claude reads each cleanly:
+ * ink alone, each image at original resolution, typed text/LaTeX as text, and (only when ink overlaps an
+ * image) a combined render. Every image carries the page-space region it shows, to map annotations back.
+ */
 export type Chip = {
   id: string;
-  /** Page-space bounds of the selection (used to map annotations back) */
+  /** Page-space bounds of the selection */
   bounds: Rect;
-  /** Crisp re-render of the selected strokes/images, PNG base64 (no data: prefix) */
-  image?: { base64: string; width: number; height: number };
-  /** Typed text inside the selection */
+  ink?: ChipImage;
+  images?: (ChipImage & { region: Rect })[];
+  combined?: ChipImage;
+  /** Typed text and equations inside the selection */
   text?: string;
+  /** e.g. "whole page" */
+  label?: string;
+  /** legacy (older chats): single flattened render of `bounds` */
+  image?: ChipImage;
 };
+
+/** Which layers of a selection go to the AI. */
+export type Include = { ink: boolean; images: boolean; text: boolean };
 
 export type ChatMessage = {
   id: string;

@@ -1,19 +1,21 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AgentPanel } from '@/components/AgentPanel';
 import { InkCanvas } from '@/components/InkCanvas';
+import { SelectionBar } from '@/components/SelectionBar';
 import { ColorMenu, MoreMenu, SideControls, TopBar, ZoomPill, type Menu } from '@/components/Toolbar';
-import { uid } from '@/lib/ink';
-import { renderSelection } from '@/lib/snapshot';
+import { selectAll, uid } from '@/lib/ink';
+import { prepareImage, renderSelection } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
-import { C, R, shadow } from '@/lib/theme';
-import type { Chip, Selection, Tool } from '@/lib/types';
-import { resetViewport, useViewport, zoomAt, type Viewport } from '@/lib/viewport';
+import { C } from '@/lib/theme';
+import type { Chip, Include, Selection, Tool } from '@/lib/types';
+import { resetViewport, useViewport, zoomAt } from '@/lib/viewport';
+
+const ALL: Include = { ink: true, images: true, text: true };
+const idsKey = (s: Selection | null) => (s ? [s.strokeIds, s.textIds, s.mathIds, s.imageIds].map((a) => a.join(',')).join('|') : '');
 
 const TOOL_KEYS: Record<string, Tool> = { p: 'pen', h: 'highlighter', s: 'shape', e: 'eraser', l: 'lasso', t: 'text' };
 
@@ -21,7 +23,14 @@ export default function NoteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const page = useStore((s) => s.pages[id]);
   const updatePage = useStore((s) => s.updatePage);
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selection, setSelectionState] = useState<Selection | null>(null);
+  const [include, setInclude] = useState<Include>(ALL);
+  const [transforming, setTransforming] = useState(false);
+  // New selection → send everything by default; moving/resizing the same items keeps the toggles.
+  const setSelection = (s: Selection | null) => {
+    if (idsKey(s) !== idsKey(selection)) setInclude(ALL);
+    setSelectionState(s);
+  };
   const [chips, setChips] = useState<Chip[]>([]);
   const [agentOpen, setAgentOpen] = useState(false);
   const [menu, setMenu] = useState<Menu>(null);
@@ -73,8 +82,15 @@ export default function NoteScreen() {
 
   function addSelectionToAI() {
     if (!selection) return;
-    setChips([...chips, renderSelection(useStore.getState().pages[id], selection)]);
+    setChips([...chips, renderSelection(useStore.getState().pages[id], selection, include)]);
     setSelection(null);
+    setAgentOpen(true);
+  }
+
+  function attachWholePage() {
+    const p = useStore.getState().pages[id];
+    const all = selectAll(p);
+    if (all) setChips([...chips, renderSelection(p, all, ALL, 'whole page')]);
     setAgentOpen(true);
   }
 
@@ -83,13 +99,20 @@ export default function NoteScreen() {
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) return;
     }
-    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], base64: true, quality: 0.6 };
+    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], base64: true, quality: 0.9 };
     const res = source === 'camera' ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
     const asset = res.canceled ? null : res.assets[0];
     if (!asset?.base64) return;
-    const w = Math.min(480, asset.width);
-    const h = (asset.height / asset.width) * w;
-    updatePage(id, (p) => ({ images: [...p.images, { id: uid(), x: 40, y: 40, w, h, base64: asset.base64! }] }), true);
+    // Store a downscaled copy (≤2048px): crisp for the AI, small enough to send and persist.
+    const img = prepareImage(asset.base64) ?? { base64: asset.base64, width: asset.width, height: asset.height, mime: 'image/jpeg' };
+    const view = visibleRect();
+    const w = Math.min(view.w * 0.6, 480 / viewport.scale.get(), img.width);
+    const h = (img.height / img.width) * w;
+    const image = { id: uid(), x: view.x + (view.w - w) / 2, y: view.y + (view.h - h) / 2, w, h, base64: img.base64, mime: img.mime };
+    updatePage(id, (p) => ({ images: [...p.images, image] }), true);
+    // Select it right away so it can be moved/resized; switch to the lasso tool so the handles work.
+    useStore.getState().setTool('lasso');
+    setSelection({ strokeIds: [], textIds: [], mathIds: [], imageIds: [image.id], bounds: { x: image.x, y: image.y, w, h } });
   }
 
   return (
@@ -98,12 +121,24 @@ export default function NoteScreen() {
       <TopBar pageId={id} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} menu={menu} setMenu={setMenu} />
       <View style={styles.body}>
         <View style={{ flex: 1 }} onLayout={(e) => (canvasSize.current = e.nativeEvent.layout)}>
-          <InkCanvas pageId={id} selection={selection} onSelectionChange={setSelection} viewport={viewport} />
+          <InkCanvas pageId={id} selection={selection} onSelectionChange={setSelection} viewport={viewport} onTransformingChange={setTransforming} />
           <SideControls pageId={id} />
           <ZoomPill viewport={viewport} getCenter={center} />
-          {selection && <AskButton selection={selection} viewport={viewport} onPress={addSelectionToAI} />}
+          {selection && !transforming && (
+            <SelectionBar
+              pageId={id}
+              selection={selection}
+              viewport={viewport}
+              include={include}
+              setInclude={setInclude}
+              onAsk={addSelectionToAI}
+              onSelectionChange={setSelection}
+            />
+          )}
         </View>
-        {agentOpen && <AgentPanel pageId={id} chips={chips} setChips={setChips} onClose={() => setAgentOpen(false)} getView={visibleRect} />}
+        {agentOpen && (
+          <AgentPanel pageId={id} chips={chips} setChips={setChips} onClose={() => setAgentOpen(false)} getView={visibleRect} onAttachPage={attachWholePage} />
+        )}
       </View>
 
       {menu && (
@@ -126,35 +161,7 @@ export default function NoteScreen() {
   );
 }
 
-/** Floating "Ask about this" pill that follows the selection as you zoom/pan. */
-function AskButton({ selection, viewport, onPress }: { selection: Selection; viewport: Viewport; onPress: () => void }) {
-  const { x, y, w, h } = selection.bounds;
-  const pos = useAnimatedStyle(() => {
-    const s = viewport.scale.get();
-    return { left: Math.max(64, (x + w) * s + viewport.tx.get() - 150), top: (y + h) * s + viewport.ty.get() + 20 };
-  });
-  return (
-    <Animated.View style={[styles.askWrap, pos]}>
-      <Pressable style={[styles.askBtn, shadow]} onPress={onPress}>
-        <MaterialCommunityIcons name="creation" size={16} color={C.onPrimary} />
-        <Text style={styles.askText}>Ask about this</Text>
-      </Pressable>
-    </Animated.View>
-  );
-}
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.surface },
   body: { flex: 1, flexDirection: 'row' },
-  askWrap: { position: 'absolute' },
-  askBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: C.primary,
-    paddingHorizontal: 14,
-    height: 38,
-    borderRadius: R.pill,
-  },
-  askText: { color: C.onPrimary, fontWeight: '600', fontSize: 14 },
 });

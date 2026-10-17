@@ -163,6 +163,7 @@ export function MoreMenu({ pageId, onAddImage }: { pageId: string; onAddImage: (
   const bg = useStore((s) => s.pages[pageId]?.bg ?? '#FFFFFF');
   const penOnly = useStore((s) => s.penOnly);
   const hasAiInk = useStore((s) => (s.pages[pageId]?.annotations.length ?? 0) > 0);
+  const lockedCount = useStore((s) => s.pages[pageId]?.images.filter((i) => i.locked).length ?? 0);
   const { updatePage, setPenOnly } = useStore.getState();
   const [confirmClear, setConfirmClear] = useState(false);
 
@@ -205,6 +206,14 @@ export function MoreMenu({ pageId, onAddImage }: { pageId: string; onAddImage: (
       <Row icon="image-outline" label="Insert photo" onPress={() => onAddImage('library')} />
       <Row icon="camera-outline" label="Take photo" onPress={() => onAddImage('camera')} />
       <Row icon="draw-pen" label="Pen only (palm rejection)" onPress={() => setPenOnly(!penOnly)} right={<Toggle on={penOnly} />} />
+
+      {lockedCount > 0 && (
+        <Row
+          icon="lock-open-variant-outline"
+          label={`Unlock background image${lockedCount > 1 ? 's' : ''} (${lockedCount})`}
+          onPress={() => updatePage(pageId, (p) => ({ images: p.images.map((i) => ({ ...i, locked: false })) }), true)}
+        />
+      )}
 
       <View style={styles.sep} />
       {hasAiInk && <Row icon="broom" label="Clear AI ink" onPress={() => updatePage(pageId, () => ({ annotations: [] }), true)} />}

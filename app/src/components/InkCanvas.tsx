@@ -6,11 +6,33 @@ import Animated, { FadeIn, useAnimatedStyle, useDerivedValue, useSharedValue, wi
 import { MathView } from '@/components/MathView';
 import { isDark, PaperBackground } from '@/components/PaperBackground';
 import { annotationPath } from '@/lib/annotations';
-import { buildPath, mathBounds, rectContains, selectWithLasso, shapePoints, snapTextTop, strokePath, strokesHitAt, TEXT_LINE_HEIGHT, textBounds, uid } from '@/lib/ink';
+import {
+  buildPath,
+  hitTest,
+  IDENTITY,
+  makeSelection,
+  mapRect,
+  mapX,
+  mapY,
+  mathBounds,
+  rectContains,
+  selectWithLasso,
+  shapePoints,
+  snapTextTop,
+  strokePath,
+  strokesHitAt,
+  TEXT_LINE_HEIGHT,
+  TEXT_SIZE,
+  textBounds,
+  textLineHeight,
+  transformSelection,
+  uid,
+  type Transform,
+} from '@/lib/ink';
 import { skImageFor } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import { C } from '@/lib/theme';
-import type { Annotation, Point, Selection, Stroke } from '@/lib/types';
+import type { Annotation, Page, Point, Rect as PageRect, Selection, Stroke } from '@/lib/types';
 import { clampZoom, toPage, zoomAt, type Viewport } from '@/lib/viewport';
 
 type Props = {
@@ -18,11 +40,16 @@ type Props = {
   selection: Selection | null;
   onSelectionChange: (s: Selection | null) => void;
   viewport: Viewport;
+  /** true while the selection is being moved/resized (hide the action bar meanwhile) */
+  onTransformingChange?: (active: boolean) => void;
 };
 
-type Mode = 'idle' | 'draw' | 'erase' | 'pan';
+type Mode = 'idle' | 'draw' | 'erase' | 'pan' | 'move' | 'resize';
 
-export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Props) {
+const SEL_PAD = 12; // page units of breathing room around a selection box
+const padRect = (r: PageRect): PageRect => ({ x: r.x - SEL_PAD, y: r.y - SEL_PAD, w: r.w + SEL_PAD * 2, h: r.h + SEL_PAD * 2 });
+
+export function InkCanvas({ pageId, selection, onSelectionChange, viewport, onTransformingChange }: Props) {
   const page = useStore((s) => s.pages[pageId]);
   const tool = useStore((s) => s.tool);
   const color = useStore((s) => s.color);
@@ -35,21 +62,42 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
   const [editingText, setEditingText] = useState<string | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [eraserAt, setEraserAt] = useState<{ x: number; y: number } | null>(null);
+  /** live preview of a move/resize, committed to the page on release */
+  const [xf, setXf] = useState<Transform | null>(null);
   const rootRef = useRef<ComponentRef<typeof View>>(null);
 
   // Gesture callbacks read from refs / getState() so they never see stale render values.
-  const g = useRef({ mode: 'idle' as Mode, stylus: false, erasedOnce: false, points: [] as Point[], pan: { x: 0, y: 0, tx: 0, ty: 0 } });
+  const g = useRef({
+    mode: 'idle' as Mode,
+    stylus: false,
+    erasedOnce: false,
+    points: [] as Point[],
+    pan: { x: 0, y: 0, tx: 0, ty: 0 },
+    tf: { x0: 0, y0: 0, ax: 0, ay: 0, w: 1, h: 1 },
+    xf: IDENTITY,
+  });
   const pinch0 = useRef({ active: false, s: 1, tx: 0, ty: 0, fx: 0, fy: 0 });
   const onSelRef = useRef(onSelectionChange);
+  const selRef = useRef(selection);
+  const onXfRef = useRef(onTransformingChange);
   useEffect(() => {
     onSelRef.current = onSelectionChange;
-  }, [onSelectionChange]);
+    selRef.current = selection;
+    onXfRef.current = onTransformingChange;
+  }, [onSelectionChange, selection, onTransformingChange]);
+
+  function setPreview(t: Transform | null) {
+    g.current.xf = t ?? IDENTITY;
+    setXf(t);
+  }
 
   function cancelStroke() {
+    if (g.current.mode === 'move' || g.current.mode === 'resize') onXfRef.current?.(false);
     g.current.mode = 'idle';
     g.current.points = [];
     setLive([]);
     setEraserAt(null);
+    setPreview(null);
   }
 
   const draw = usePanGesture({
@@ -69,8 +117,37 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
         g.current.pan = { x: e.x, y: e.y, tx: viewport.tx.get(), ty: viewport.ty.get() };
         return;
       }
-      if (tool !== 'text') onSelRef.current(null);
       const [px, py] = toPage(viewport, e.x, e.y);
+
+      // Lasso tool + existing selection: corner handle = resize, inside = move.
+      const sel = selRef.current;
+      if (tool === 'lasso' && sel) {
+        const b = padRect(sel.bounds);
+        const tol = 22 / viewport.scale.get();
+        const corners: [number, number][] = [
+          [b.x, b.y],
+          [b.x + b.w, b.y],
+          [b.x, b.y + b.h],
+          [b.x + b.w, b.y + b.h],
+        ];
+        const ci = corners.findIndex(([cx, cy]) => Math.hypot(px - cx, py - cy) < tol);
+        if (ci >= 0) {
+          const [ax, ay] = corners[3 - ci]; // the opposite corner stays put
+          g.current.mode = 'resize';
+          g.current.tf = { x0: px, y0: py, ax, ay, w: b.w, h: b.h };
+          setPreview({ ...IDENTITY, ax, ay });
+          onXfRef.current?.(true);
+          return;
+        }
+        if (rectContains(b, px, py)) {
+          g.current.mode = 'move';
+          g.current.tf = { ...g.current.tf, x0: px, y0: py };
+          setPreview(IDENTITY);
+          onXfRef.current?.(true);
+          return;
+        }
+      }
+      if (tool !== 'text') onSelRef.current(null);
       if (tool === 'eraser') {
         g.current.mode = 'erase';
         return erase(px, py);
@@ -88,6 +165,12 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
         return;
       }
       const [px, py] = toPage(viewport, e.x, e.y);
+      if (m === 'move') return setPreview({ ...IDENTITY, dx: px - g.current.tf.x0, dy: py - g.current.tf.y0 });
+      if (m === 'resize') {
+        const { ax, ay, w, h } = g.current.tf;
+        const sc = Math.max(0.1, Math.max(Math.abs(px - ax) / w, Math.abs(py - ay) / h));
+        return setPreview({ ax, ay, s: sc, dx: 0, dy: 0 });
+      }
       if (m === 'erase') return erase(px, py);
       if (m !== 'draw') return;
       const pt: Point = [px, py, e.stylusData?.pressure ?? 0.5];
@@ -98,7 +181,18 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
     onDeactivate: (e) => {
       const m = g.current.mode;
       const pts = g.current.points;
+      const t = g.current.xf;
       cancelStroke();
+
+      if ((m === 'move' || m === 'resize') && !e.canceled) {
+        const sel = selRef.current;
+        const moved = Math.abs(t.dx) + Math.abs(t.dy) > 0.5 || Math.abs(t.s - 1) > 0.005;
+        if (sel && moved) {
+          updatePage(pageId, (p) => transformSelection(p, sel, t), true); // one undo step
+          onSelRef.current(makeSelection(useStore.getState().pages[pageId], sel));
+        }
+        return;
+      }
       if (m !== 'draw' || e.canceled || !pts.length) return;
 
       const { tool, color, highlighterColor, sizes, shapeKind, pages } = useStore.getState();
@@ -119,7 +213,12 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
         const stroke: Stroke = { id: uid(), tool: 'shape', color, size: sizes.pen, points: shapePoints(shapeKind, a[0], a[1], b[0], b[1], sizes.pen), stylus: false };
         updatePage(pageId, (p) => ({ strokes: [...p.strokes, stroke] }), true);
       } else if (tool === 'lasso') {
-        onSelRef.current(selectWithLasso(pts, page.strokes, page.texts, page.images, page.maths));
+        // A tap (no real loop) selects the single object under the pen; a drag is a normal lasso.
+        const xs = pts.map((p) => p[0]);
+        const ys = pts.map((p) => p[1]);
+        const extent = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * viewport.scale.get();
+        if (extent < 8) onSelRef.current(hitTest(page, pts[0][0], pts[0][1], 10 / viewport.scale.get()));
+        else onSelRef.current(selectWithLasso(pts, page.strokes, page.texts, page.images, page.maths));
       } else if (tool === 'text') {
         const [x, y] = pts[0];
         const id = uid();
@@ -215,11 +314,18 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
   const overlayStyle = useAnimatedStyle(() => ({ transform: [{ translateX: tx.get() }, { translateY: ty.get() }, { scale: scale.get() }] }));
   const eraserR = useDerivedValue(() => sizes.eraser / scale.get(), [sizes.eraser]);
   const hairline = useDerivedValue(() => 1.5 / scale.get());
+  const handleR = useDerivedValue(() => 7 / scale.get()); // handles stay the same size on screen
 
   if (!page) return null;
   const bg = page.bg ?? '#FFFFFF';
   const textColor = isDark(bg) ? '#F2F2F2' : C.text;
-  const selected = new Set(selection?.strokeIds);
+  // While moving/resizing, selected items render through `xfTransform` instead of in place.
+  const moving = !!(xf && selection);
+  const selStrokes = new Set(moving ? selection!.strokeIds : []);
+  const selImages = new Set(moving ? selection!.imageIds : []);
+  const xfTransform = xf ? [{ translateX: xf.ax + xf.dx }, { translateY: xf.ay + xf.dy }, { scale: xf.s }, { translateX: -xf.ax }, { translateY: -xf.ay }] : [];
+  const selBox = selection ? mapRect(xf ?? IDENTITY, padRect(selection.bounds)) : null;
+  const tFor = (ids: string[] | undefined, id: string) => (xf && ids?.includes(id) ? xf : IDENTITY);
 
   return (
     <View ref={rootRef} style={[styles.root, { backgroundColor: bg }]} onLayout={(e) => setCanvasSize(e.nativeEvent.layout)}>
@@ -229,26 +335,30 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
             <Group transform={transform}>
               <PaperBackground paper={page.paper ?? 'blank'} bg={bg} width={canvasSize.width} height={canvasSize.height} viewport={viewport} />
 
-              {page.images.map((im) => {
-                const sk = skImageFor(im);
-                return sk ? <SkiaImage key={im.id} image={sk} x={im.x} y={im.y} width={im.w} height={im.h} fit="contain" /> : null;
-              })}
+              {page.images
+                .filter((im) => !selImages.has(im.id))
+                .map((im) => (
+                  <PageImageView key={im.id} im={im} />
+                ))}
+              {page.strokes
+                .filter((st) => !selStrokes.has(st.id))
+                .map((st) => (
+                  <StrokeView key={st.id} s={st} />
+                ))}
 
-              {page.strokes.map((s) =>
-                s.tool === 'pen' ? (
-                  <Path key={s.id} path={strokePath(s)} color={selected.has(s.id) ? C.focus : s.color} />
-                ) : (
-                  <Path
-                    key={s.id}
-                    path={strokePath(s)}
-                    color={selected.has(s.id) ? C.focus : s.color}
-                    opacity={s.tool === 'highlighter' ? 0.35 : 1}
-                    style="stroke"
-                    strokeWidth={s.size}
-                    strokeCap="round"
-                    strokeJoin="round"
-                  />
-                ),
+              {moving && (
+                <Group transform={xfTransform}>
+                  {page.images
+                    .filter((im) => selImages.has(im.id))
+                    .map((im) => (
+                      <PageImageView key={im.id} im={im} />
+                    ))}
+                  {page.strokes
+                    .filter((st) => selStrokes.has(st.id))
+                    .map((st) => (
+                      <StrokeView key={st.id} s={st} />
+                    ))}
+                </Group>
               )}
 
               {livePath && tool === 'lasso' && (
@@ -264,10 +374,24 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
 
               {eraserAt && tool === 'eraser' && <Circle cx={eraserAt.x} cy={eraserAt.y} r={eraserR} color={C.muted} style="stroke" strokeWidth={hairline} />}
 
-              {selection && (
-                <Rect x={selection.bounds.x - 12} y={selection.bounds.y - 12} width={selection.bounds.w + 24} height={selection.bounds.h + 24} color={C.focus} style="stroke" strokeWidth={hairline}>
-                  <DashPathEffect intervals={[6, 5]} />
-                </Rect>
+              {selBox && (
+                <>
+                  <Rect x={selBox.x} y={selBox.y} width={selBox.w} height={selBox.h} color={C.focus} style="stroke" strokeWidth={hairline}>
+                    <DashPathEffect intervals={[6, 5]} />
+                  </Rect>
+                  {tool === 'lasso' &&
+                    [
+                      [selBox.x, selBox.y],
+                      [selBox.x + selBox.w, selBox.y],
+                      [selBox.x, selBox.y + selBox.h],
+                      [selBox.x + selBox.w, selBox.y + selBox.h],
+                    ].map(([cx, cy], i) => (
+                      <Group key={i}>
+                        <Circle cx={cx} cy={cy} r={handleR} color="#FFFFFF" />
+                        <Circle cx={cx} cy={cy} r={handleR} color={C.focus} style="stroke" strokeWidth={hairline} />
+                      </Group>
+                    ))}
+                </>
               )}
 
               {page.annotations.map((a) => (
@@ -293,7 +417,7 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
               setEditingText(null);
               if (!t.text.trim()) updatePage(pageId, (p) => ({ texts: p.texts.filter((x) => x.id !== t.id) }));
             }}
-            style={[styles.textBlock, { left: t.x, top: t.y, width: t.width, color: t.color ?? textColor }, selection?.textIds.includes(t.id) && styles.textSelected]}
+            style={[styles.textBlock, textStyle(t, tFor(selection?.textIds, t.id), textColor), selection?.textIds.includes(t.id) && styles.textSelected]}
           />
         ))}
       </Animated.View>
@@ -303,14 +427,18 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
         {(page.maths ?? []).map((m) => (
           <View
             key={m.id}
-            style={[styles.math, { left: m.x, top: m.y }, selection?.mathIds.includes(m.id) && styles.textSelected]}
+            style={[
+              styles.math,
+              { left: mapX(tFor(selection?.mathIds, m.id), m.x), top: mapY(tFor(selection?.mathIds, m.id), m.y) },
+              selection?.mathIds.includes(m.id) && styles.textSelected,
+            ]}
             onLayout={(e) => {
               const { width, height } = e.nativeEvent.layout;
-              if (Math.abs(width - m.w) > 2 || Math.abs(height - m.h) > 2)
+              if (!xf && (Math.abs(width - m.w) > 2 || Math.abs(height - m.h) > 2))
                 updatePage(pageId, (p) => ({ maths: (p.maths ?? []).map((x) => (x.id === m.id ? { ...x, w: width, h: height } : x)) }));
             }}
           >
-            <MathView latex={m.latex} color={m.color ?? textColor} />
+            <MathView latex={m.latex} color={m.color ?? textColor} fontSize={(m.size ?? 24) * tFor(selection?.mathIds, m.id).s} />
           </View>
         ))}
       </Animated.View>
@@ -325,6 +453,28 @@ export function InkCanvas({ pageId, selection, onSelectionChange, viewport }: Pr
       </Animated.View>
     </View>
   );
+}
+
+function StrokeView({ s }: { s: Stroke }) {
+  if (s.tool === 'pen') return <Path path={strokePath(s)} color={s.color} />;
+  return <Path path={strokePath(s)} color={s.color} opacity={s.tool === 'highlighter' ? 0.35 : 1} style="stroke" strokeWidth={s.size} strokeCap="round" strokeJoin="round" />;
+}
+
+function PageImageView({ im }: { im: Page['images'][number] }) {
+  const sk = skImageFor(im);
+  return sk ? <SkiaImage image={sk} x={im.x} y={im.y} width={im.w} height={im.h} fit="fill" /> : null;
+}
+
+/** Position + font size of a text block, through an optional live move/resize transform. */
+function textStyle(t: Page['texts'][number], tt: Transform, color: string) {
+  return {
+    left: mapX(tt, t.x),
+    top: mapY(tt, t.y),
+    width: t.width * tt.s,
+    fontSize: (t.size ?? TEXT_SIZE) * tt.s,
+    lineHeight: textLineHeight(t) * tt.s,
+    color: t.color ?? color,
+  };
 }
 
 /** Delay (ms) before an annotation should start animating, or null if it's old and should just appear. */
@@ -370,8 +520,6 @@ const styles = StyleSheet.create({
   layer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, transformOrigin: 'left top' },
   textBlock: {
     position: 'absolute',
-    fontSize: 18,
-    lineHeight: TEXT_LINE_HEIGHT,
     paddingHorizontal: 4,
     paddingVertical: 0,
   },

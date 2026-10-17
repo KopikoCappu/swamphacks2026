@@ -5,7 +5,7 @@ export type Provider = 'claude' | 'gemini';
 export type Mode = 'ask' | 'mistake' | 'explain' | 'transcribe';
 
 /** `label` is shown to the model right before the image, e.g. "Image 0 — your selection". */
-export type ImagePart = { base64: string; width: number; height: number; label?: string };
+export type ImagePart = { base64: string; width: number; height: number; label?: string; mime?: string };
 
 export type ChatMessage = {
   role: 'user' | 'assistant';

@@ -20,6 +20,8 @@ type Props = {
   onClose: () => void;
   /** Page-space rect currently visible on screen. */
   getView: () => Rect;
+  /** Attach everything on the page as a chip. */
+  onAttachPage: () => void;
 };
 
 const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
@@ -28,7 +30,7 @@ const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
   { mode: 'transcribe', icon: 'text-recognition', label: 'To text', prompt: 'Convert my handwriting to text.' },
 ];
 
-export function AgentPanel({ pageId, chips, setChips, onClose, getView }: Props) {
+export function AgentPanel({ pageId, chips, setChips, onClose, getView, onAttachPage }: Props) {
   const chat = useStore((s) => s.pages[pageId]?.chat ?? []);
   const updatePage = useStore((s) => s.updatePage);
   // Gemini is wired up on the server but hidden in the UI for now.
@@ -158,6 +160,10 @@ export function AgentPanel({ pageId, chips, setChips, onClose, getView }: Props)
         )}
 
         <View style={styles.quick}>
+          <Pressable disabled={busy} onPress={onAttachPage} style={({ pressed }) => [styles.quickBtn, pressed && { backgroundColor: C.selected }, busy && { opacity: 0.4 }]}>
+            <MaterialCommunityIcons name="file-document-outline" size={15} color={C.icon} />
+            <Text style={styles.quickText}>Whole page</Text>
+          </Pressable>
           {QUICK.map((q) => (
             <Pressable key={q.mode} disabled={busy} onPress={() => send(q.mode, input || q.prompt)} style={({ pressed }) => [styles.quickBtn, pressed && { backgroundColor: C.selected }, busy && { opacity: 0.4 }]}>
               <MaterialCommunityIcons name={q.icon} size={15} color={C.icon} />
@@ -185,15 +191,23 @@ export function AgentPanel({ pageId, chips, setChips, onClose, getView }: Props)
 }
 
 function ChipPreview({ chip, small }: { chip: Chip; small?: boolean }) {
-  const h = small ? 56 : 110;
+  const h = small ? 56 : 96;
+  // Show each layer that will be sent: ink, original images, and the combined view (if any).
+  const layers = [chip.image, chip.ink, ...(chip.images ?? []), chip.combined].filter((x): x is NonNullable<typeof x> => !!x);
   return (
     <View style={styles.chip}>
-      {chip.image && (
-        <Image
-          source={{ uri: `data:image/png;base64,${chip.image.base64}` }}
-          style={{ height: h, width: Math.min(small ? 120 : 260, (chip.image.width / chip.image.height) * h) }}
-          resizeMode="contain"
-        />
+      {!!chip.label && <Text style={styles.chipLabel}>{chip.label}</Text>}
+      {layers.length > 0 && (
+        <View style={styles.chipLayers}>
+          {layers.map((img, i) => (
+            <Image
+              key={i}
+              source={{ uri: `data:${img.mime ?? 'image/png'};base64,${img.base64}` }}
+              style={{ height: h, width: Math.min(small ? 110 : 220, (img.width / img.height) * h), backgroundColor: C.paper }}
+              resizeMode="contain"
+            />
+          ))}
+        </View>
       )}
       {!!chip.text && (
         <Text numberOfLines={small ? 2 : 6} style={styles.chipText}>
@@ -228,7 +242,9 @@ const styles = StyleSheet.create({
   action: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   actionText: { fontSize: 13, color: C.muted },
   chip: { backgroundColor: C.paper, borderRadius: R.sm, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border, overflow: 'hidden', alignSelf: 'flex-start' },
-  chipText: { fontSize: 12, padding: 6, maxWidth: 200, color: C.text },
+  chipText: { fontSize: 12, padding: 6, maxWidth: 220, color: C.text, fontFamily: 'monospace' },
+  chipLabel: { fontSize: 11, fontWeight: '600', color: C.muted, paddingHorizontal: 6, paddingTop: 4, textTransform: 'uppercase', letterSpacing: 0.4 },
+  chipLayers: { flexDirection: 'row', gap: 1, backgroundColor: C.border },
   chipX: { position: 'absolute', top: -6, right: -6, backgroundColor: C.text, borderRadius: 10, width: 20, height: 20, alignItems: 'center', justifyContent: 'center' },
   composer: { padding: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   quick: { flexDirection: 'row', gap: 6, marginBottom: 10, flexWrap: 'wrap' },

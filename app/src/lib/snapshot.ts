@@ -1,6 +1,6 @@
 import { ImageFormat, PaintStyle, Skia, StrokeCap, StrokeJoin, type SkImage } from '@shopify/react-native-skia';
 import { mathBounds, strokeBounds, strokePath, textBounds } from './ink';
-import type { Chip, Page, PageImage, Rect, Selection } from './types';
+import type { Chip, Include, Page, PageImage, Rect, Selection } from './types';
 
 const PADDING = 24; // page points of whitespace around a selection
 const TARGET_LONG_SIDE = 1600; // px — plenty for handwriting, well under API image limits
@@ -69,26 +69,64 @@ export function renderRegion(
   return { base64: surface.makeImageSnapshot().encodeToBase64(ImageFormat.PNG, 100), width, height };
 }
 
-/** A lassoed selection → chip (crisp image of the strokes + any typed text / equations as text). */
-export function renderSelection(page: Page, sel: Selection): Chip {
+const ALL: Include = { ink: true, images: true, text: true };
+
+/**
+ * A selection → chip, split into layers so Claude reads each cleanly:
+ * - ink: just the strokes, nothing behind them
+ * - images: each selected image at its stored (original) resolution
+ * - combined: ink + images together, only when ink actually overlaps an image (e.g. labels on a diagram)
+ * - text: typed text and LaTeX as exact text (never rasterized)
+ */
+export function renderSelection(page: Page, sel: Selection, include: Include = ALL, label?: string): Chip {
   const region: Rect = {
     x: sel.bounds.x - PADDING,
     y: sel.bounds.y - PADDING,
     w: sel.bounds.w + PADDING * 2,
     h: sel.bounds.h + PADDING * 2,
   };
-  const typed = [
-    ...page.texts.filter((t) => sel.textIds.includes(t.id) && t.text.trim()).map((t) => ({ y: t.y, x: t.x, s: t.text })),
-    ...(page.maths ?? []).filter((m) => sel.mathIds.includes(m.id)).map((m) => ({ y: m.y, x: m.x, s: `$$${m.latex}$$` })),
-  ]
-    .sort((a, b) => a.y - b.y || a.x - b.x)
-    .map((t) => t.s)
-    .join('\n');
+  const chip: Chip = { id: Math.random().toString(36).slice(2), bounds: region, label };
 
-  const chip: Chip = { id: Math.random().toString(36).slice(2), bounds: region, text: typed || undefined };
-  if (!sel.strokeIds.length && !sel.imageIds.length) return chip;
-  const image = renderRegion(page, region, { strokeIds: sel.strokeIds, imageIds: sel.imageIds });
-  return image ? { ...chip, image } : chip;
+  if (include.text) {
+    const typed = [
+      ...page.texts.filter((t) => sel.textIds.includes(t.id) && t.text.trim()).map((t) => ({ y: t.y, x: t.x, s: t.text })),
+      ...(page.maths ?? []).filter((m) => sel.mathIds.includes(m.id)).map((m) => ({ y: m.y, x: m.x, s: `$$${m.latex}$$` })),
+    ]
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map((t) => t.s)
+      .join('\n');
+    if (typed) chip.text = typed;
+  }
+
+  const strokes = include.ink ? sel.strokeIds : [];
+  const images = include.images ? page.images.filter((i) => sel.imageIds.includes(i.id)) : [];
+
+  if (strokes.length) chip.ink = renderRegion(page, region, { strokeIds: strokes, imageIds: [] }) ?? undefined;
+  if (images.length) {
+    chip.images = images.map((im) => {
+      const sk = skImageFor(im);
+      return { base64: im.base64, mime: im.mime ?? 'image/jpeg', width: sk?.width() ?? Math.round(im.w), height: sk?.height() ?? Math.round(im.h), region: { x: im.x, y: im.y, w: im.w, h: im.h } };
+    });
+    const inkOnImage = page.strokes.some((s) => strokes.includes(s.id) && images.some((im) => overlaps(strokeBounds(s), im)));
+    if (inkOnImage) chip.combined = renderRegion(page, region, { strokeIds: strokes, imageIds: images.map((i) => i.id) }) ?? undefined;
+  }
+  return chip;
+}
+
+/** Downscale an imported photo once, on insert: sharp enough for the AI, small enough to send and store. */
+export function prepareImage(base64: string, maxSide = 2048): { base64: string; width: number; height: number; mime: string } | null {
+  const img = Skia.Image.MakeImageFromEncoded(Skia.Data.fromBase64(base64));
+  if (!img) return null;
+  const scale = Math.min(1, maxSide / Math.max(img.width(), img.height()));
+  const width = Math.round(img.width() * scale);
+  const height = Math.round(img.height() * scale);
+  const surface = Skia.Surface.Make(width, height) ?? Skia.Surface.MakeOffscreen(width, height);
+  if (!surface) return null;
+  const canvas = surface.getCanvas();
+  canvas.drawColor(Skia.Color('white'));
+  canvas.drawImageRect(img, Skia.XYWHRect(0, 0, img.width(), img.height()), Skia.XYWHRect(0, 0, width, height), Skia.Paint());
+  surface.flush();
+  return { base64: surface.makeImageSnapshot().encodeToBase64(ImageFormat.JPEG, 85), width, height, mime: 'image/jpeg' };
 }
 
 /**

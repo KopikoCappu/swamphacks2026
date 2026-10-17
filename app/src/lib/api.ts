@@ -24,14 +24,32 @@ export type AskResponse = {
   transcription?: string;
 };
 
-type WireImage = RenderedImage & { label?: string };
+type WireImage = RenderedImage & { label?: string; mime?: string };
 type WireMessage = { role: 'user' | 'assistant'; text: string; images?: WireImage[] };
 
 /** Extra context attached to the newest user message only (not stored in chat history). */
 export type PageContext = { view: RenderedImage | null; viewRect: Rect; text: string };
 
 function chipText(m: ChatMessage) {
-  return [m.text, ...(m.chips ?? []).map((c) => (c.text ? `Typed text / equations from my selection:\n${c.text}` : ''))].filter(Boolean).join('\n\n');
+  return [
+    m.text,
+    ...(m.chips ?? []).map((c) => (c.text ? `Typed text / equations from my ${c.label ?? 'selection'} (exact text, not an image):\n${c.text}` : '')),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+/** Every image a chip contributes, each with a label and the page-space region it shows. */
+function chipImages(m: ChatMessage, n: { k: number }): { img: WireImage; region: Rect }[] {
+  return (m.chips ?? []).flatMap((c) => {
+    const name = c.label ?? `selection ${++n.k}`;
+    const out: { img: WireImage; region: Rect }[] = [];
+    if (c.image) out.push({ img: { ...c.image, label: name }, region: c.bounds }); // legacy chips
+    if (c.ink) out.push({ img: { ...c.ink, label: `${name}: handwriting/ink only (no background)` }, region: c.bounds });
+    (c.images ?? []).forEach((im, i) => out.push({ img: { ...im, label: `${name}: image ${i + 1} (original)` }, region: im.region }));
+    if (c.combined) out.push({ img: { ...c.combined, label: `${name}: ink and image together, as laid out on the page` }, region: c.bounds });
+    return out;
+  });
 }
 
 /**
@@ -39,15 +57,15 @@ function chipText(m: ChatMessage) {
  * so annotation boxes (which reference images by index) can be mapped back onto the page.
  */
 export function buildRequest(history: ChatMessage[], ctx: PageContext): { messages: WireMessage[]; regions: Rect[] } {
-  const regions: Rect[] = [];
+  let regions: Rect[] = [];
   const messages = history
     .filter((m) => !m.error)
     .map((m, i, all): WireMessage => {
-      const selections = (m.chips ?? []).filter((c) => c.image);
-      const images: WireImage[] = selections.map((c, k) => ({ ...c.image!, label: `selection ${k + 1}` }));
-      if (i !== all.length - 1) return { role: m.role, text: chipText(m), images };
+      const parts = chipImages(m, { k: 0 });
+      if (i !== all.length - 1) return { role: m.role, text: chipText(m), images: parts.map((p) => p.img) };
 
-      selections.forEach((c) => regions.push(c.bounds));
+      regions = parts.map((p) => p.region);
+      const images = parts.map((p) => p.img);
       if (ctx.view) {
         images.push({ ...ctx.view, label: 'page view (what is on my screen right now)' });
         regions.push(ctx.viewRect);

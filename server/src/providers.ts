@@ -9,6 +9,8 @@ const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-flash-latest';
 let anthropic: Anthropic | null = null;
 let gemini: GoogleGenAI | null = null;
 
+const mediaType = (img: ImagePart) => (img.mime === 'image/jpeg' ? 'image/jpeg' : img.mime === 'image/webp' ? 'image/webp' : 'image/png') as 'image/png' | 'image/jpeg' | 'image/webp';
+
 const imageLabel = (img: ImagePart, i: number) => `Image ${i}${img.label ? ` — ${img.label}` : ''} (${img.width}×${img.height}px):`;
 
 function withModeInstruction(req: AskRequest) {
@@ -43,7 +45,7 @@ export async function askClaude(req: AskRequest): Promise<AskResponse> {
       content: [
         ...(m.images ?? []).flatMap((img, i) => [
           { type: 'text' as const, text: imageLabel(img, i) },
-          { type: 'image' as const, source: { type: 'base64' as const, media_type: 'image/png' as const, data: img.base64 } },
+          { type: 'image' as const, source: { type: 'base64' as const, media_type: mediaType(img), data: img.base64 } },
         ]),
         { type: 'text' as const, text: m.text || '(see image)' },
       ],
@@ -70,7 +72,7 @@ export async function askGemini(req: AskRequest): Promise<AskResponse> {
     contents: messages.map((m) => ({
       role: m.role === 'assistant' ? 'model' : 'user',
       parts: [
-        ...(m.images ?? []).flatMap((img, i) => [{ text: imageLabel(img, i) }, { inlineData: { mimeType: 'image/png', data: img.base64 } }]),
+        ...(m.images ?? []).flatMap((img, i) => [{ text: imageLabel(img, i) }, { inlineData: { mimeType: mediaType(img), data: img.base64 } }]),
         { text: m.text || '(see image)' },
       ],
     })),
