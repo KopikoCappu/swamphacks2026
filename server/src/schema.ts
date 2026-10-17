@@ -67,6 +67,7 @@ export const RESPONSE_JSON_SCHEMA = {
           color: { type: 'string', enum: ['red', 'green', 'blue', 'orange'] },
         },
         required: ['kind', 'box'],
+        additionalProperties: false,
       },
     },
     transcription: {
@@ -75,4 +76,5 @@ export const RESPONSE_JSON_SCHEMA = {
     },
   },
   required: ['reply', 'annotations'],
+  additionalProperties: false,
 } as const;

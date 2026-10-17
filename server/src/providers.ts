@@ -3,7 +3,7 @@ import { GoogleGenAI } from '@google/genai';
 import { MODE_INSTRUCTIONS, SYSTEM_PROMPT } from './prompts.js';
 import { RESPONSE_JSON_SCHEMA, type AskRequest, type AskResponse } from './schema.js';
 
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5-5';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL ?? 'claude-opus-5-5';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-flash-latest';
 
 let anthropic: Anthropic | null = null;
@@ -23,18 +23,19 @@ export async function askClaude(req: AskRequest): Promise<AskResponse> {
   anthropic ??= new Anthropic(); // reads ANTHROPIC_API_KEY
   const messages = withModeInstruction(req);
 
-  const res = await anthropic.messages.create({
+  // Structured outputs: the API guarantees the reply matches RESPONSE_JSON_SCHEMA.
+  // (Forced tool_choice is not supported on current models.)
+  const res = await anthropic.beta.messages.create({
     model: ANTHROPIC_MODEL,
-    max_tokens: 4096,
+    max_tokens: 16000,
     system: SYSTEM_PROMPT,
-    tools: [
-      {
-        name: 'respond',
-        description: 'Send your reply and any annotations to draw on the student\'s page.',
-        input_schema: RESPONSE_JSON_SCHEMA as unknown as Anthropic.Tool.InputSchema,
-      },
-    ],
-    tool_choice: { type: 'tool', name: 'respond' },
+    output_config: {
+      effort: 'medium',
+      format: { type: 'json_schema', schema: RESPONSE_JSON_SCHEMA as unknown as Record<string, unknown> },
+    },
+    // If a safety classifier declines, the server retries on a suitable fallback model.
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
     messages: messages.map((m) => ({
       role: m.role,
       content: [
@@ -47,12 +48,15 @@ export async function askClaude(req: AskRequest): Promise<AskResponse> {
     })),
   });
 
-  const toolUse = res.content.find((b) => b.type === 'tool_use');
-  if (!toolUse || toolUse.type !== 'tool_use') {
-    const text = res.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  if (res.stop_reason === 'refusal') {
+    return { reply: "Sorry — I can't help with that one.", annotations: [] };
+  }
+  const text = res.content.map((b) => (b.type === 'text' ? b.text : '')).join('');
+  try {
+    return normalize(JSON.parse(text));
+  } catch {
     return { reply: text || '(no response)', annotations: [] };
   }
-  return normalize(toolUse.input);
 }
 
 export async function askGemini(req: AskRequest): Promise<AskResponse> {
