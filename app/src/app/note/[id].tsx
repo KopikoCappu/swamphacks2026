@@ -1,19 +1,21 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { AgentPanel } from '@/components/AgentPanel';
 import { InkCanvas } from '@/components/InkCanvas';
-import { ColorMenu, MoreMenu, SideControls, TopBar, type Menu } from '@/components/Toolbar';
+import { ColorMenu, MoreMenu, SideControls, TopBar, ZoomPill, type Menu } from '@/components/Toolbar';
 import { uid } from '@/lib/ink';
 import { renderSelection } from '@/lib/snapshot';
 import { useStore } from '@/lib/store';
 import { C, R, shadow } from '@/lib/theme';
 import type { Chip, Selection, Tool } from '@/lib/types';
+import { resetViewport, useViewport, zoomAt, type Viewport } from '@/lib/viewport';
 
-const TOOL_KEYS: Record<string, Tool> = { p: 'pen', h: 'highlighter', e: 'eraser', l: 'lasso', t: 'text' };
+const TOOL_KEYS: Record<string, Tool> = { p: 'pen', h: 'highlighter', s: 'shape', e: 'eraser', l: 'lasso', t: 'text' };
 
 export default function NoteScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -23,6 +25,9 @@ export default function NoteScreen() {
   const [chips, setChips] = useState<Chip[]>([]);
   const [agentOpen, setAgentOpen] = useState(false);
   const [menu, setMenu] = useState<Menu>(null);
+  const viewport = useViewport();
+  const canvasSize = useRef({ width: 0, height: 0 });
+  const center = (): [number, number] => [canvasSize.current.width / 2, canvasSize.current.height / 2];
 
   // Keyboard shortcuts (web / tablets with a keyboard): Ctrl+Z, Ctrl+Shift+Z / Ctrl+Y, P H E L T, Esc
   useEffect(() => {
@@ -40,6 +45,12 @@ export default function NoteScreen() {
       } else if (mod && key === 'y') {
         e.preventDefault();
         redoPage(id);
+      } else if (mod && (key === '=' || key === '+' || key === '-')) {
+        e.preventDefault();
+        zoomAt(viewport, viewport.scale.get() * (key === '-' ? 1 / 1.25 : 1.25), ...center());
+      } else if (mod && key === '0') {
+        e.preventDefault();
+        resetViewport(viewport);
       } else if (!mod && TOOL_KEYS[key]) {
         setTool(TOOL_KEYS[key]);
       } else if (key === 'escape') {
@@ -49,6 +60,7 @@ export default function NoteScreen() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (!page) return <Text style={{ padding: 24 }}>Note not found.</Text>;
@@ -79,18 +91,11 @@ export default function NoteScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <TopBar pageId={id} agentOpen={agentOpen} onToggleAgent={() => setAgentOpen(!agentOpen)} menu={menu} setMenu={setMenu} />
       <View style={styles.body}>
-        <View style={{ flex: 1 }}>
-          <InkCanvas pageId={id} selection={selection} onSelectionChange={setSelection} />
+        <View style={{ flex: 1 }} onLayout={(e) => (canvasSize.current = e.nativeEvent.layout)}>
+          <InkCanvas pageId={id} selection={selection} onSelectionChange={setSelection} viewport={viewport} />
           <SideControls pageId={id} />
-          {selection && (
-            <Pressable
-              style={[styles.askBtn, shadow, { left: Math.max(64, selection.bounds.x + selection.bounds.w - 150), top: selection.bounds.y + selection.bounds.h + 20 }]}
-              onPress={addSelectionToAI}
-            >
-              <MaterialCommunityIcons name="creation" size={16} color={C.onPrimary} />
-              <Text style={styles.askText}>Ask about this</Text>
-            </Pressable>
-          )}
+          <ZoomPill viewport={viewport} getCenter={center} />
+          {selection && <AskButton selection={selection} viewport={viewport} onPress={addSelectionToAI} />}
         </View>
         {agentOpen && <AgentPanel pageId={id} chips={chips} setChips={setChips} onClose={() => setAgentOpen(false)} />}
       </View>
@@ -115,11 +120,28 @@ export default function NoteScreen() {
   );
 }
 
+/** Floating "Ask about this" pill that follows the selection as you zoom/pan. */
+function AskButton({ selection, viewport, onPress }: { selection: Selection; viewport: Viewport; onPress: () => void }) {
+  const { x, y, w, h } = selection.bounds;
+  const pos = useAnimatedStyle(() => {
+    const s = viewport.scale.get();
+    return { left: Math.max(64, (x + w) * s + viewport.tx.get() - 150), top: (y + h) * s + viewport.ty.get() + 20 };
+  });
+  return (
+    <Animated.View style={[styles.askWrap, pos]}>
+      <Pressable style={[styles.askBtn, shadow]} onPress={onPress}>
+        <MaterialCommunityIcons name="creation" size={16} color={C.onPrimary} />
+        <Text style={styles.askText}>Ask about this</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.surface },
   body: { flex: 1, flexDirection: 'row' },
+  askWrap: { position: 'absolute' },
   askBtn: {
-    position: 'absolute',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

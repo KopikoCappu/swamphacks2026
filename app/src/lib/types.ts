@@ -1,14 +1,17 @@
-// All coordinates are in "page space" (canvas points). No zoom/pan yet, so page == view.
+// All stored coordinates are in "page space". The viewport (zoom/pan) maps page -> screen.
 
 export type Point = [x: number, y: number, pressure: number];
 
-export type Tool = 'pen' | 'highlighter' | 'eraser' | 'lasso' | 'text';
+export type Tool = 'pen' | 'highlighter' | 'shape' | 'eraser' | 'lasso' | 'text';
+
+export type ShapeKind = 'line' | 'arrow' | 'rect' | 'ellipse';
 
 export type Paper = 'blank' | 'lined' | 'grid' | 'dots';
 
 export type Stroke = {
   id: string;
-  tool: 'pen' | 'highlighter';
+  /** shape strokes are plain polylines (no pressure), drawn with a fixed width */
+  tool: 'pen' | 'highlighter' | 'shape';
   color: string;
   size: number;
   points: Point[];
@@ -65,7 +68,12 @@ export type Page = {
   annotations: Annotation[];
   chat: ChatMessage[];
   paper?: Paper;
+  /** page background color */
+  bg?: string;
+  folderId?: string | null;
 };
+
+export type Folder = { id: string; name: string; createdAt: number };
 
 export type Selection = {
   strokeIds: string[];

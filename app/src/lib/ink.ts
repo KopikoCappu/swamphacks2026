@@ -1,6 +1,6 @@
 import { Skia, type SkPath } from '@shopify/react-native-skia';
 import { getStroke } from 'perfect-freehand';
-import type { PageImage, Point, Rect, Selection, Stroke, TextBlock } from './types';
+import type { PageImage, Point, Rect, Selection, ShapeKind, Stroke, TextBlock } from './types';
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -21,7 +21,7 @@ export function buildPath(points: Point[], tool: Stroke['tool'], size: number, s
   const path = Skia.PathBuilder.Make();
   if (points.length === 0) return path.detach();
 
-  if (tool === 'highlighter') {
+  if (tool === 'highlighter' || tool === 'shape') {
     path.moveTo(points[0][0], points[0][1]);
     for (let i = 1; i < points.length; i++) path.lineTo(points[i][0], points[i][1]);
     if (points.length === 1) path.lineTo(points[0][0] + 0.1, points[0][1]);
@@ -82,15 +82,13 @@ export function pointInPolygon(x: number, y: number, poly: Point[]): boolean {
   return inside;
 }
 
-// Notebook ruling. Typed text uses the same line height so it sits on the lines.
+// Paper ruling. Typed text uses the same line height so it sits on the lines.
 export const LINE_SPACING = 32;
-export const RULE_TOP = 64; // first ruled line
-export const MARGIN_X = 72; // red margin line on lined paper
 export const TEXT_LINE_HEIGHT = LINE_SPACING;
 
 /** Top of a text block whose first line sits on the ruled line nearest to y. */
 export function snapTextTop(y: number) {
-  const rule = RULE_TOP + Math.max(0, Math.round((y - RULE_TOP) / LINE_SPACING)) * LINE_SPACING;
+  const rule = Math.round(y / LINE_SPACING) * LINE_SPACING; // the canvas is infinite, so lines are too
   return rule - LINE_SPACING + 4;
 }
 export const textBounds = (t: TextBlock): Rect => ({
@@ -134,4 +132,46 @@ export function strokesHitAt(strokes: Stroke[], x: number, y: number, radius: nu
   return strokes
     .filter((s) => s.points.some(([px, py]) => (px - x) ** 2 + (py - y) ** 2 <= r2 + (s.size / 2) ** 2))
     .map((s) => s.id);
+}
+
+// ---------- Shapes ----------
+
+/** Resample a polyline so points are at most `step` apart (keeps eraser hit-testing working on long edges). */
+function densify(pts: [number, number][], step = 4): Point[] {
+  const out: Point[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [x0, y0] = pts[i];
+    const [x1, y1] = pts[i + 1];
+    const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, y1 - y0) / step));
+    for (let k = 0; k < n; k++) out.push([x0 + ((x1 - x0) * k) / n, y0 + ((y1 - y0) * k) / n, 0.5]);
+  }
+  const last = pts[pts.length - 1];
+  out.push([last[0], last[1], 0.5]);
+  return out;
+}
+
+/** Polyline points for a shape dragged from (x0, y0) to (x1, y1). */
+export function shapePoints(kind: ShapeKind, x0: number, y0: number, x1: number, y1: number, size: number): Point[] {
+  switch (kind) {
+    case 'line':
+      return densify([[x0, y0], [x1, y1]]);
+    case 'arrow': {
+      const a = Math.atan2(y1 - y0, x1 - x0);
+      const head = Math.max(14, size * 4);
+      const h1: [number, number] = [x1 - head * Math.cos(a - 0.5), y1 - head * Math.sin(a - 0.5)];
+      const h2: [number, number] = [x1 - head * Math.cos(a + 0.5), y1 - head * Math.sin(a + 0.5)];
+      return densify([[x0, y0], [x1, y1], h1, [x1, y1], h2]);
+    }
+    case 'rect':
+      return densify([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]);
+    case 'ellipse': {
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, rx = Math.abs(x1 - x0) / 2, ry = Math.abs(y1 - y0) / 2;
+      const pts: [number, number][] = [];
+      for (let i = 0; i <= 72; i++) {
+        const t = (i / 72) * Math.PI * 2;
+        pts.push([cx + Math.cos(t) * rx, cy + Math.sin(t) * ry]);
+      }
+      return densify(pts);
+    }
+  }
 }

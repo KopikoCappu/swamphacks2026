@@ -17,7 +17,7 @@ export function skImageFor(img: PageImage): SkImage | null {
 }
 
 /**
- * Re-render ONLY the selected strokes/images at high resolution on white.
+ * Re-render ONLY the selected strokes/images at high resolution on the page color (no paper lines).
  * This is the whole point of the app: the model gets vector-crisp ink instead of a blurry screenshot.
  */
 export function renderSelection(page: Page, sel: Selection): Chip {
@@ -46,7 +46,7 @@ export function renderSelection(page: Page, sel: Selection): Chip {
   const surface = Skia.Surface.Make(width, height) ?? Skia.Surface.MakeOffscreen(width, height);
   if (!surface) throw new Error('Could not create Skia surface');
   const canvas = surface.getCanvas();
-  canvas.drawColor(Skia.Color('white'));
+  canvas.drawColor(Skia.Color(page.bg ?? '#FFFFFF'));
   canvas.scale(scale, scale);
   canvas.translate(-region.x, -region.y);
 
@@ -60,12 +60,12 @@ export function renderSelection(page: Page, sel: Selection): Chip {
     const paint = Skia.Paint();
     paint.setAntiAlias(true);
     paint.setColor(Skia.Color(s.color));
-    if (s.tool === 'highlighter') {
+    if (s.tool !== 'pen') {
       paint.setStyle(PaintStyle.Stroke);
       paint.setStrokeWidth(s.size);
       paint.setStrokeCap(StrokeCap.Round);
       paint.setStrokeJoin(StrokeJoin.Round);
-      paint.setAlphaf(0.35);
+      if (s.tool === 'highlighter') paint.setAlphaf(0.35);
     } else {
       paint.setStyle(PaintStyle.Fill);
     }

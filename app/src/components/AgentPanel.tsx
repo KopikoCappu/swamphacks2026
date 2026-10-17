@@ -27,7 +27,8 @@ const QUICK: { mode: Mode; icon: IconName; label: string; prompt: string }[] = [
 export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
   const chat = useStore((s) => s.pages[pageId]?.chat ?? []);
   const updatePage = useStore((s) => s.updatePage);
-  const [provider, setProvider] = useState<Provider>('claude');
+  // Gemini is wired up on the server but hidden in the UI for now.
+  const provider: Provider = 'claude';
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
@@ -89,12 +90,9 @@ export function AgentPanel({ pageId, chips, setChips, onClose }: Props) {
   return (
     <View style={styles.panel}>
       <View style={styles.header}>
-        <View style={styles.segment}>
-          {(['claude', 'gemini'] as Provider[]).map((p) => (
-            <Pressable key={p} onPress={() => setProvider(p)} style={[styles.segBtn, provider === p && styles.segActive]}>
-              <Text style={[styles.segText, provider === p && { color: C.text }]}>{p === 'claude' ? 'Claude' : 'Gemini'}</Text>
-            </Pressable>
-          ))}
+        <View style={styles.titleRow}>
+          <MaterialCommunityIcons name="creation" size={18} color={C.text} />
+          <Text style={styles.titleText}>Claude</Text>
         </View>
         <IconBtn icon="close" onPress={onClose} />
       </View>
@@ -203,10 +201,8 @@ function Action({ icon, label, onPress }: { icon: IconName; label: string; onPre
 const styles = StyleSheet.create({
   panel: { width: 380, backgroundColor: C.surface, borderLeftWidth: StyleSheet.hairlineWidth, borderColor: C.border },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, height: 52 },
-  segment: { flexDirection: 'row', backgroundColor: C.bg, borderRadius: R.sm, padding: 2 },
-  segBtn: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 6 },
-  segActive: { backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.border },
-  segText: { fontSize: 13, fontWeight: '600', color: C.muted },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4 },
+  titleText: { fontSize: 15, fontWeight: '600', color: C.text },
   empty: { alignItems: 'center', gap: 10, marginTop: 48, paddingHorizontal: 32 },
   emptyText: { color: C.muted, textAlign: 'center', fontSize: 14, lineHeight: 20 },
   userMsg: { alignSelf: 'flex-end', maxWidth: '88%', backgroundColor: C.bg, borderRadius: R.lg, padding: 10, gap: 8 },
