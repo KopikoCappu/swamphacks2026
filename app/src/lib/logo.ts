@@ -1,11 +1,12 @@
 /**
- * InkBuddy mascot: a chibi squid (default: a baby southern calamari). 100×100 viewBox.
+ * InkBuddy mascot. Default: a colossal squid silhouette (one color, eye cut out). 100×100 viewBox.
+ * The chibi variants are kept as alternates.
  * Used by <Logo> (Skia ImageSVG) and by the icon script for the app icon / favicon / splash.
  */
 export const BODY = '#7B61FF';
 export const BODY_DARK = '#5B3FE6';
 
-export type LogoVariant = 'calamari' | 'chibi' | 'dots' | 'drop';
+export type LogoVariant = 'colossal' | 'calamari' | 'chibi' | 'dots' | 'drop';
 
 const FACE = (y: number, spread = 12) => `
   <ellipse cx="${50 - spread}" cy="${y}" rx="6" ry="7.5" fill="#1C1830"/>
@@ -28,7 +29,41 @@ const GRAD = `<defs>
   </linearGradient>
 </defs>`;
 
-function body(variant: LogoVariant) {
+
+/**
+ * Colossal squid silhouette, one solid color (works on any background): broad tail fins, bulky mantle,
+ * eight thick arms and two long clubbed tentacles. The eye is a real hole (even-odd fill), not a painted dot.
+ */
+function colossal(color: string) {
+  // Eight arms fanning out of the head, each with a little curl: [start x, c1x, c1y, c2x, c2y, end x, end y]
+  const arms = [
+    [43.6, 38, 76, 30, 78, 27, 85],
+    [45.2, 41, 80, 36, 84, 34, 90],
+    [46.8, 45, 82, 40, 88, 41, 93],
+    [48.4, 48, 84, 46, 90, 48, 95],
+    [51.6, 52, 84, 54, 90, 52, 95],
+    [53.2, 55, 82, 60, 88, 59, 93],
+    [54.8, 59, 80, 64, 84, 66, 90],
+    [56.4, 62, 76, 70, 78, 73, 85],
+  ];
+  return `<g transform="translate(52 48) rotate(24) scale(0.8) translate(-50 -52)">
+  <path fill="${color}" fill-rule="evenodd" d="
+    M50 1 C55 5 65 11 74 17 C80 21 82 27 80 32 C77 29 70 27 63 30
+    C66 37 67 44 66.5 51 C66 58 62 63 58.5 65 C59.5 68 59.5 71 58 74 L42 74 C40.5 71 40.5 68 41.5 65
+    C38 63 34 58 33.5 51 C33 44 34 37 37 30 C30 27 23 29 20 32 C18 27 20 21 26 17 C35 11 45 5 50 1 Z
+    M55.5 67.5 m-3.4 0 a3.4 3 0 1 0 6.8 0 a3.4 3 0 1 0 -6.8 0 Z"/>
+  <g fill="none" stroke="${color}" stroke-linecap="round">
+    ${arms.map(([x0, ax, ay, bx, by, x1, y1]) => `<path d="M${x0} 72 C${ax} ${ay} ${bx} ${by} ${x1} ${y1}" stroke-width="3"/>`).join('')}
+    <path d="M47 73 C44 84 32 84 28 91 C25 96 20 97 17 95" stroke-width="1.6"/>
+    <path d="M53 73 C56 84 68 84 72 91 C75 96 80 97 83 95" stroke-width="1.6"/>
+  </g>
+  <ellipse cx="16" cy="94.4" rx="3.4" ry="2" transform="rotate(30 16 94.4)" fill="${color}"/>
+  <ellipse cx="84" cy="94.4" rx="3.4" ry="2" transform="rotate(-30 84 94.4)" fill="${color}"/>
+  </g>`;
+}
+
+function body(variant: LogoVariant, color: string) {
+  if (variant === 'colossal') return colossal(color);
   switch (variant) {
     case 'dots':
       // A round head and tentacles made of shrinking ink dots.
@@ -111,9 +146,12 @@ function body(variant: LogoVariant) {
   }
 }
 
-export function logoSvg({ background, variant = 'calamari' }: { background?: string; variant?: LogoVariant } = {}) {
+/** Default mascot color: deep ink. */
+export const INK = '#1C1C1E';
+
+export function logoSvg({ background, variant = 'colossal', color = INK }: { background?: string; variant?: LogoVariant; color?: string } = {}) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
 ${background ? `<rect width="100" height="100" fill="${background}"/>` : ''}
-${body(variant)}
+${body(variant, color)}
 </svg>`;
 }

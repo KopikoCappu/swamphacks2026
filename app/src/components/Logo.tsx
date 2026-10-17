@@ -1,10 +1,10 @@
 import { Canvas, Group, ImageSVG, Skia } from '@shopify/react-native-skia';
 import { useMemo } from 'react';
-import { logoSvg } from '@/lib/logo';
+import { INK, logoSvg } from '@/lib/logo';
 
-/** The InkBuddy squid-pencil mascot. */
-export function Logo({ size = 32 }: { size?: number }) {
-  const svg = useMemo(() => Skia.SVG.MakeFromString(logoSvg()), []);
+/** The InkBuddy squid silhouette, in any single color. */
+export function Logo({ size = 32, color = INK }: { size?: number; color?: string }) {
+  const svg = useMemo(() => Skia.SVG.MakeFromString(logoSvg({ color })), [color]);
   if (!svg) return null;
   // Draw at the SVG's native 100×100 and scale the group (drawing it smaller directly mis-scales on web).
   return (

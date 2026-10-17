@@ -114,7 +114,7 @@ export function HomeBanner({ color, title, subtitle, action }: Props) {
       <View style={styles.right}>
         {action}
         <View style={styles.mascot}>
-          <Logo size={92} />
+          <Logo size={96} color={text} />
         </View>
       </View>
     </View>
